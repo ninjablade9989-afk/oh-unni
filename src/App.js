@@ -1151,31 +1151,46 @@ export default function Phase10App() {
     updateRoom((r) => resolveHit(r, myId, cardId, ownerId, groupIdx));
   }
 
-  function discardCard(cardId) {
-    if (!isMyTurn) {
-      setError("⚠️ It's not your turn!");
-      setTimeout(() => setError(""), 2000);
-      return;
-    }
-    updateRoom((r) => resolveDiscard(r, myId, cardId));
-    setGroups([[], []]);
+ function discardCard(cardId) {
+  if (!isMyTurn) {
+    setError("⚠️ It's not your turn!");
+    setTimeout(() => setError(""), 2000);
+    return;
   }
-
-  function autoEndTurn() {
-    updateRoom((r) => {
-      let rr = r;
-      if (rr.turnState === "draw") rr = resolveDraw(rr, myId, "deck");
-      const player = rr.players.find((p) => p.id === myId);
-      if (!player || player.hand.length === 0) return rr;
-      const nonWild = player.hand.filter((c) => c.kind !== "wild");
-      const pool = nonWild.length ? nonWild : player.hand;
-      const target = pool.slice().sort((a, b) => cardScore(b) - cardScore(a))[0];
-      return resolveDiscard(rr, myId, target.id);
-    });
-    setGroups([[], []]);
-    setError("⏰ Time's up — a card was auto-discarded for you.");
+  if (!hasDrawn) {
+    setError("⚠️ You must draw a card first!");
+    setTimeout(() => setError(""), 2000);
+    return;
   }
+  
+  updateRoom((r) => resolveDiscard(r, myId, cardId));
+  
+  // ✅ FIX: Phase groups stay as they are!
+  // Cards you dragged to phase slots remain there
+  setError("");
+}
 
+ function autoEndTurn() {
+  updateRoom((r) => {
+    let rr = r;
+    if (rr.turnState === "draw") rr = resolveDraw(rr, myId, "deck");
+    const player = rr.players.find((p) => p.id === myId);
+    if (!player || player.hand.length === 0) return rr;
+    const nonWild = player.hand.filter((c) => c.kind !== "wild");
+    const pool = nonWild.length ? nonWild : player.hand;
+    const target = pool.slice().sort((a, b) => cardScore(b) - cardScore(a))[0];
+    return resolveDiscard(rr, myId, target.id);
+  });
+  
+  // ✅ FIX: Phase groups stay as they are!
+  setError("⏰ Time's up — a card was auto-discarded for you.");
+}
+
+/* ---- Clear all phase groups manually ---- */
+
+function clearAllGroups() {
+  setGroups([[], []]);
+}
   /* ---- bot turn driver (solo mode) ---- */
 
   useEffect(() => {
@@ -1659,20 +1674,20 @@ export default function Phase10App() {
                   >
                     ✅ Confirm
                   </button>
-                  <button 
-                    onClick={() => setGroups([[], []])} 
-                    style={{ 
-                      padding: "4px 12px", 
-                      borderRadius: "6px", 
-                      border: "1px solid rgba(244,233,201,0.3)", 
-                      background: "transparent", 
-                      color: "#F4E9C9", 
-                      fontSize: "11px", 
-                      cursor: "pointer" 
-                    }}
-                  >
-                    Clear
-                  </button>
+          <button 
+  onClick={clearAllGroups}
+  style={{ 
+    padding: "4px 12px", 
+    borderRadius: "6px", 
+    border: "1px solid rgba(244,233,201,0.3)", 
+    background: "transparent", 
+    color: "#F4E9C9", 
+    fontSize: "11px", 
+    cursor: "pointer" 
+  }}
+>
+  ✖ Clear All
+</button>
                   {!isMyTurn && <span style={{ fontSize: "9px", opacity: 0.5 }}>⏳ Wait for your turn</span>}
                   {isMyTurn && !hasDrawn && <span style={{ fontSize: "9px", color: "#E8B84B" }}>⚠️ Draw a card first!</span>}
                   {isMyTurn && hasDrawn && me?.laidDownThisRound && <span style={{ fontSize: "9px", color: "#7DBE8C" }}>✅ Phase laid down!</span>}
