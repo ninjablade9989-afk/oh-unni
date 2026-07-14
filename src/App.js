@@ -2,32 +2,83 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { subscribeToRoom } from './supabase';
 
 /* ---------------------------------------------------------------
-   OH UNNI - Card Game
-   Complete Feature Update:
-   - Phase box always visible
-   - Pre-build phases anytime
-   - Confirm only after drawing
-   - Turn indicator (glow/bounce)
-   - Round winner celebration
-   - Help/How-to-play modal
-   - Phase cards stay when discarding
-   - Undo button
-   - Hint system
-   - Difficulty levels (Easy/Medium/Hard)
-   - Multiplayer chat
-   - Card dealing animations
+   🐱 PAWSOME PHASE 10 - Cat Themed Card Game
+   Features: Random Phases | Random Music | Cat Theme | All Features
 --------------------------------------------------------------- */
 
-// Audio Manager
+// Cat Theme Colors
+const CAT_THEME = {
+  bg: "linear-gradient(135deg, #FFE4E1, #FFB6C1, #FFD4D4)",
+  primary: "#FF6B8A",
+  secondary: "#C8A2C8",
+  accent: "#FFB6C1",
+  text: "#5C3D6B",
+  cardBg: "#FFF5F5",
+  cardBorder: "#FF6B8A",
+  gold: "#FFD700",
+  dark: "#4A2D5A",
+  light: "#FFE4E1",
+  paw: "#D4A0A0",
+};
+
+// Random Cat Music Tracks
+const CAT_MUSIC = [
+  // Track 1: Happy Cat
+  {
+    name: "🐱 Happy Cat",
+    notes: [523, 587, 659, 784, 880, 988, 1047],
+    durations: [0.3, 0.3, 0.3, 0.4, 0.3, 0.3, 0.6],
+    tempo: 0.25,
+  },
+  // Track 2: Purring Cat
+  {
+    name: "😸 Purring Cat",
+    notes: [392, 440, 493, 523, 440, 493, 523, 587],
+    durations: [0.4, 0.4, 0.4, 0.6, 0.4, 0.4, 0.4, 0.6],
+    tempo: 0.3,
+  },
+  // Track 3: Playful Kitten
+  {
+    name: "🐾 Playful Kitten",
+    notes: [659, 784, 880, 784, 880, 988, 784, 880, 988, 1047],
+    durations: [0.2, 0.2, 0.3, 0.2, 0.2, 0.3, 0.2, 0.2, 0.3, 0.4],
+    tempo: 0.15,
+  },
+  // Track 4: Sleepy Cat
+  {
+    name: "😴 Sleepy Cat",
+    notes: [261, 293, 329, 392, 440, 493, 392, 329],
+    durations: [0.5, 0.5, 0.5, 0.7, 0.5, 0.5, 0.5, 0.7],
+    tempo: 0.4,
+  },
+  // Track 5: Cat Dance
+  {
+    name: "💃 Cat Dance",
+    notes: [523, 523, 587, 587, 659, 659, 784, 784, 880, 880, 988, 988, 1047],
+    durations: [0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.2, 0.15, 0.15, 0.15, 0.15, 0.2, 0.4],
+    tempo: 0.12,
+  },
+];
+
+// Audio Manager with Random Music
 const AudioManager = {
   context: null,
   musicPlaying: false,
+  currentTrack: null,
+  trackIndex: 0,
+  timeoutId: null,
   
   init() {
     if (!this.context) {
       this.context = new (window.AudioContext || window.webkitAudioContext)();
     }
     return this.context;
+  },
+  
+  getRandomTrack() {
+    const track = CAT_MUSIC[Math.floor(Math.random() * CAT_MUSIC.length)];
+    this.currentTrack = track;
+    return track;
   },
   
   playDrawSound() {
@@ -146,16 +197,18 @@ const AudioManager = {
     if (this.musicPlaying) return;
     try {
       this.musicPlaying = true;
+      this.getRandomTrack();
+      console.log('🎵 Playing:', this.currentTrack.name);
       this.playMusicLoop();
     } catch (e) {}
   },
   
   playMusicLoop() {
-    if (!this.musicPlaying) return;
+    if (!this.musicPlaying || !this.currentTrack) return;
     try {
       const ctx = this.init();
-      const notes = [261, 293, 329, 392, 440, 493, 523];
-      const durations = [0.3, 0.3, 0.3, 0.4, 0.3, 0.3, 0.6];
+      const { notes, durations, tempo } = this.currentTrack;
+      
       notes.forEach((freq, i) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -163,23 +216,31 @@ const AudioManager = {
         gain.connect(ctx.destination);
         osc.frequency.value = freq;
         osc.type = 'sine';
-        const startTime = ctx.currentTime + i * 0.25;
+        const startTime = ctx.currentTime + i * tempo;
         gain.gain.setValueAtTime(0.03, startTime);
         gain.gain.exponentialRampToValueAtTime(0.001, startTime + durations[i]);
         osc.start(startTime);
         osc.stop(startTime + durations[i]);
       });
-      const totalDuration = notes.length * 0.25 + 0.6;
-      setTimeout(() => {
+      
+      const totalDuration = notes.length * tempo + 0.6;
+      this.timeoutId = setTimeout(() => {
         if (this.musicPlaying) {
+          // Pick a new random track for variety
+          this.getRandomTrack();
+          console.log('🎵 Now playing:', this.currentTrack.name);
           this.playMusicLoop();
         }
-      }, totalDuration * 1000 + 500);
+      }, totalDuration * 1000 + 1000);
     } catch (e) {}
   },
   
   stopBackgroundMusic() {
     this.musicPlaying = false;
+    if (this.timeoutId) {
+      clearTimeout(this.timeoutId);
+      this.timeoutId = null;
+    }
   },
   
   toggleMute() {
@@ -209,67 +270,59 @@ function HelpModal({ onClose }) {
       zIndex: 10001,
     }}>
       <div style={{
-        background: '#1F5C42',
+        background: '#FFE4E1',
         padding: '30px',
         borderRadius: '16px',
         maxWidth: '500px',
         maxHeight: '80vh',
         overflowY: 'auto',
-        color: '#F4E9C9',
-        border: '2px solid #E8B84B',
+        color: '#5C3D6B',
+        border: '3px solid #FF6B8A',
       }}>
-        <div style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px', textAlign: 'center', color: '#E8B84B' }}>
-          🃏 How to Play OH UNNI
+        <div style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px', textAlign: 'center', color: '#FF6B8A' }}>
+          🐱 How to Play PAWSOME PHASE 10
         </div>
         
         <div style={{ marginBottom: '16px' }}>
-          <h3 style={{ color: '#E8B84B', marginBottom: '6px' }}>🎯 Goal</h3>
+          <h3 style={{ color: '#FF6B8A', marginBottom: '6px' }}>🎯 Goal</h3>
           <p>Complete 10 phases before your opponents!</p>
         </div>
         
         <div style={{ marginBottom: '16px' }}>
-          <h3 style={{ color: '#E8B84B', marginBottom: '6px' }}>📋 Phase Cards</h3>
+          <h3 style={{ color: '#FF6B8A', marginBottom: '6px' }}>📋 Phase Cards</h3>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>2 Sets of 3</span>
-            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Set of 3 + Run of 4</span>
-            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Set of 4 + Run of 4</span>
-            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Run of 7</span>
-            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Run of 8</span>
-            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Run of 9</span>
-            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>2 Sets of 4</span>
-            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>7 of One Color</span>
-            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Set of 5 + Set of 2</span>
-            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Set of 5 + Set of 3</span>
+            <span style={{ background: '#FF6B8A20', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>2 Sets of 3</span>
+            <span style={{ background: '#FF6B8A20', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Set of 3 + Run of 4</span>
+            <span style={{ background: '#FF6B8A20', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Set of 4 + Run of 4</span>
+            <span style={{ background: '#FF6B8A20', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Run of 7</span>
+            <span style={{ background: '#FF6B8A20', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Run of 8</span>
+            <span style={{ background: '#FF6B8A20', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Run of 9</span>
+            <span style={{ background: '#FF6B8A20', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>2 Sets of 4</span>
+            <span style={{ background: '#FF6B8A20', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>7 of One Color</span>
+            <span style={{ background: '#FF6B8A20', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Set of 5 + Set of 2</span>
+            <span style={{ background: '#FF6B8A20', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Set of 5 + Set of 3</span>
           </div>
         </div>
         
         <div style={{ marginBottom: '16px' }}>
-          <h3 style={{ color: '#E8B84B', marginBottom: '6px' }}>🃏 Cards</h3>
+          <h3 style={{ color: '#FF6B8A', marginBottom: '6px' }}>🃏 Cards</h3>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <div style={{ background: '#FAF6ED', color: '#C4453E', padding: '4px 10px', borderRadius: '4px', fontSize: '14px', fontWeight: 'bold' }}>1-12</div>
-            <div style={{ background: '#3A3A4E', color: '#F4E9C9', padding: '4px 10px', borderRadius: '4px', fontSize: '14px', fontWeight: 'bold' }}>★ Wild</div>
-            <div style={{ background: '#2B2B2B', color: '#F4E9C9', padding: '4px 10px', borderRadius: '4px', fontSize: '14px', fontWeight: 'bold' }}>⊘ Skip</div>
+            <div style={{ background: '#3A3A4E', color: '#FFE4E1', padding: '4px 10px', borderRadius: '4px', fontSize: '14px', fontWeight: 'bold' }}>★ Wild</div>
+            <div style={{ background: '#2B2B2B', color: '#FFE4E1', padding: '4px 10px', borderRadius: '4px', fontSize: '14px', fontWeight: 'bold' }}>⊘ Skip</div>
           </div>
           <p style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>Wild = any card • Skip = opponent loses turn</p>
         </div>
         
         <div style={{ marginBottom: '16px' }}>
-          <h3 style={{ color: '#E8B84B', marginBottom: '6px' }}>🎮 How to Play</h3>
+          <h3 style={{ color: '#FF6B8A', marginBottom: '6px' }}>🎮 How to Play</h3>
           <ol style={{ fontSize: '13px', paddingLeft: '20px' }}>
-            <li style={{ marginBottom: '4px' }}>Draw a card from DECK or DISCARD</li>
+            <li style={{ marginBottom: '4px' }}>Draw a card from 🐱 DECK or 🐾 DISCARD</li>
             <li style={{ marginBottom: '4px' }}>Drag cards to build your phase</li>
             <li style={{ marginBottom: '4px' }}>Click ✓ Confirm to lay down phase</li>
             <li style={{ marginBottom: '4px' }}>Discard one card to end turn</li>
             <li style={{ marginBottom: '4px' }}>First to finish all 10 phases wins!</li>
           </ol>
-        </div>
-        
-        <div style={{ marginBottom: '16px' }}>
-          <h3 style={{ color: '#E8B84B', marginBottom: '6px' }}>🎯 Scoring</h3>
-          <p style={{ fontSize: '13px' }}>
-            Cards 1-9 = 5 pts • Cards 10-12 = 10 pts • Skip = 15 pts • Wild = 25 pts<br/>
-            <span style={{ opacity: 0.7 }}>Lowest score wins!</span>
-          </p>
         </div>
         
         <button
@@ -279,14 +332,14 @@ function HelpModal({ onClose }) {
             padding: '10px',
             borderRadius: '8px',
             border: 'none',
-            background: '#E8B84B',
-            color: '#1B4332',
+            background: '#FF6B8A',
+            color: 'white',
             fontWeight: 'bold',
             fontSize: '16px',
             cursor: 'pointer',
           }}
         >
-          Got it! 🎮
+          Got it! 🐱
         </button>
       </div>
     </div>
@@ -317,13 +370,14 @@ function Chat({ messages, onSendMessage, currentPlayer }) {
 
   return (
     <div style={{
-      background: "rgba(0,0,0,0.3)",
+      background: "rgba(255,107,138,0.1)",
       borderRadius: "8px",
       padding: "8px",
       marginBottom: "8px",
       maxHeight: "150px",
       display: "flex",
       flexDirection: "column",
+      border: "1px solid rgba(255,107,138,0.2)",
     }}>
       <div style={{
         fontSize: "10px",
@@ -331,8 +385,9 @@ function Chat({ messages, onSendMessage, currentPlayer }) {
         marginBottom: "4px",
         display: "flex",
         justifyContent: "space-between",
+        color: "#5C3D6B",
       }}>
-        <span>💬 Chat</span>
+        <span>💬 Meow Chat</span>
         <span style={{ fontSize: "8px", opacity: 0.4 }}>{messages.length} messages</span>
       </div>
       <div style={{
@@ -345,8 +400,8 @@ function Chat({ messages, onSendMessage, currentPlayer }) {
         {messages.map((msg, i) => (
           <div key={i} style={{
             padding: "2px 4px",
-            borderBottom: "1px solid rgba(244,233,201,0.05)",
-            color: msg.playerId === "system" ? "#E8B84B" : "#F4E9C9",
+            borderBottom: "1px solid rgba(255,107,138,0.05)",
+            color: msg.playerId === "system" ? "#FF6B8A" : "#5C3D6B",
           }}>
             <span style={{ fontWeight: "bold", opacity: 0.8 }}>
               {msg.playerName}:
@@ -361,14 +416,14 @@ function Chat({ messages, onSendMessage, currentPlayer }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyPress={handleKeyPress}
-          placeholder="Type a message..."
+          placeholder="Meow a message..."
           style={{
             flex: 1,
             padding: "4px 8px",
             borderRadius: "4px",
-            border: "1px solid rgba(244,233,201,0.2)",
-            background: "rgba(0,0,0,0.3)",
-            color: "#F4E9C9",
+            border: "1px solid rgba(255,107,138,0.2)",
+            background: "rgba(255,255,255,0.5)",
+            color: "#5C3D6B",
             fontSize: "11px",
             outline: "none",
           }}
@@ -379,14 +434,14 @@ function Chat({ messages, onSendMessage, currentPlayer }) {
             padding: "4px 12px",
             borderRadius: "4px",
             border: "none",
-            background: "#E8B84B",
-            color: "#1B4332",
+            background: "#FF6B8A",
+            color: "white",
             fontWeight: "bold",
             fontSize: "11px",
             cursor: "pointer",
           }}
         >
-          Send
+          Meow!
         </button>
       </div>
     </div>
@@ -403,10 +458,10 @@ function Celebration({ message, onClose, type }) {
   }, [onClose]);
 
   const getEmojis = () => {
-    if (type === 'win') return ['🏆', '🎊', '👑', '🥇'];
-    if (type === 'round') return ['🎉', '👏', '⭐', '🎊'];
-    if (type === 'phase') return ['🌟', '✨', '💫', '🎉'];
-    return ['🎯', '⭐', '💪', '🎉'];
+    if (type === 'win') return ['🏆', '🐱', '👑', '🎊'];
+    if (type === 'round') return ['🎉', '🐾', '⭐', '🎊'];
+    if (type === 'phase') return ['🌟', '🐱', '💫', '🎉'];
+    return ['🐱', '⭐', '💪', '🎉'];
   };
 
   const emojis = getEmojis();
@@ -427,10 +482,10 @@ function Celebration({ message, onClose, type }) {
       <div style={{
         animation: 'celebrate 0.5s ease-out',
         background: type === 'win' 
-          ? 'linear-gradient(135deg, #FFD700, #FF6B6B, #FFD700)' 
+          ? 'linear-gradient(135deg, #FFD700, #FF6B8A, #FFD700)' 
           : type === 'round'
-          ? 'linear-gradient(135deg, #4ECDC4, #45B7D1, #4ECDC4)'
-          : 'linear-gradient(135deg, #E8B84B, #FF6B6B, #4ECDC4)',
+          ? 'linear-gradient(135deg, #C8A2C8, #FF6B8A, #C8A2C8)'
+          : 'linear-gradient(135deg, #FF6B8A, #C8A2C8, #FF6B8A)',
         padding: '30px 50px',
         borderRadius: '20px',
         boxShadow: '0 20px 60px rgba(0,0,0,0.8)',
@@ -459,7 +514,7 @@ function Celebration({ message, onClose, type }) {
           {message}
         </div>
         <div style={{ fontSize: '14px', color: 'white', marginTop: '10px', opacity: 0.9 }}>
-          {type === 'win' ? '🏆 CHAMPION! 🏆' : type === 'round' ? '🎯 Ready for next round! 🎯' : '✨ Amazing! ✨'}
+          {type === 'win' ? '🏆 PAWSOME CHAMPION! 🏆' : type === 'round' ? '🐱 Meow-velous! 🐱' : '✨ Purr-fect! ✨'}
         </div>
         <button
           onClick={onClose}
@@ -469,14 +524,14 @@ function Celebration({ message, onClose, type }) {
             borderRadius: '10px',
             border: 'none',
             background: 'white',
-            color: '#1B4332',
+            color: '#FF6B8A',
             fontWeight: 'bold',
             cursor: 'pointer',
             pointerEvents: 'auto',
             fontSize: '14px',
           }}
         >
-          Continue
+          Continue 🐾
         </button>
       </div>
       <style>{`
@@ -542,6 +597,30 @@ function cardScore(card) {
   if (card.kind === "skip") return 15;
   if (card.number >= 1 && card.number <= 9) return 5;
   return 10;
+}
+
+/* ---------- Phase Deck with Random Phases ---------- */
+
+function createPhaseDeck() {
+  const deck = [];
+  PHASES.forEach((phase, index) => {
+    deck.push({ ...phase, cardIndex: index });
+    deck.push({ ...phase, cardIndex: index });
+  });
+  return shuffle(deck);
+}
+
+function shufflePhaseDeck() {
+  return shuffle(createPhaseDeck());
+}
+
+function getCurrentPhase(room, player) {
+  if (!room || !player) return null;
+  if (!room.shuffledPhases || !room.phaseDeck) {
+    return PHASES[Math.min(player.phaseIndex, 9)] || null;
+  }
+  const idx = Math.min(player.phaseIndex, room.phaseDeck.length - 1);
+  return room.phaseDeck[idx] || null;
 }
 
 /* ---------- validation ---------- */
@@ -760,7 +839,6 @@ function resolveLayDown(r, playerId, activeGroups) {
   }));
   AudioManager.playPhaseCompleteSound();
   
-  // Check if player has no cards left after laying down
   if (pl.hand.length === 0) {
     AudioManager.playWinSound();
     const results = players.map((p) => {
@@ -1050,7 +1128,7 @@ async function saveRoom(room) {
   await window.storage.set(roomKey(room.code), JSON.stringify(room), true);
 }
 
-/* ---------- card visual - Compact ---------- */
+/* ---------- card visual - Cat Themed ---------- */
 const CardFace = React.forwardRef(function CardFace(
   { card, size = "md", selected, onClick, faceDown, dim, draggable, onPointerDownDrag, glowing, bouncing, dealAnimation },
   ref
@@ -1067,19 +1145,25 @@ const CardFace = React.forwardRef(function CardFace(
           width: dims.w,
           height: dims.h,
           borderRadius: 6,
-          background: "repeating-linear-gradient(135deg, #1B4332, #1B4332 6px, #133326 6px, #133326 12px)",
-          border: glowing ? "2px solid #E8B84B" : "2px solid #0d2419",
-          boxShadow: glowing ? "0 0 20px rgba(232,184,75,0.5), 0 0 40px rgba(232,184,75,0.2)" : "0 2px 4px rgba(0,0,0,0.4)",
+          background: "repeating-linear-gradient(135deg, #FFB6C1, #FFB6C1 6px, #FF9AAF 6px, #FF9AAF 12px)",
+          border: glowing ? "2px solid #FF6B8A" : "2px solid #D4A0A0",
+          boxShadow: glowing ? "0 0 20px rgba(255,107,138,0.5), 0 0 40px rgba(255,107,138,0.2)" : "0 2px 4px rgba(0,0,0,0.4)",
           cursor: onClick ? "pointer" : "default",
           flexShrink: 0,
           animation: bouncing ? 'bounce 1s ease-in-out infinite' : dealAnimation ? 'dealCard 0.5s ease-out' : 'none',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '18px',
         }}
-      />
+      >
+        🐾
+      </div>
     );
   }
-  const bg = card.kind === "wild" ? "#3A3A4E" : card.kind === "skip" ? "#2B2B2B" : "#FAF6ED";
-  const fg = card.kind === "number" ? COLOR_HEX[card.color] : "#F4E9C9";
-  const label = card.kind === "wild" ? "★" : card.kind === "skip" ? "⊘" : card.number;
+  const bg = card.kind === "wild" ? "#C8A2C8" : card.kind === "skip" ? "#D4A0A0" : "#FFF5F5";
+  const fg = card.kind === "number" ? COLOR_HEX[card.color] : "#5C3D6B";
+  const label = card.kind === "wild" ? "🐱" : card.kind === "skip" ? "🐾" : card.number;
   return (
     <div
       ref={ref}
@@ -1090,9 +1174,9 @@ const CardFace = React.forwardRef(function CardFace(
         height: dims.h,
         borderRadius: 6,
         background: bg,
-        border: selected ? "2px solid #E8B84B" : "1px solid rgba(0,0,0,0.25)",
+        border: selected ? "2px solid #FF6B8A" : "1px solid rgba(255,107,138,0.3)",
         boxShadow: glowing 
-          ? "0 0 20px rgba(232,184,75,0.5), 0 0 40px rgba(232,184,75,0.2), 0 4px 8px rgba(0,0,0,0.3)" 
+          ? "0 0 20px rgba(255,107,138,0.5), 0 0 40px rgba(255,107,138,0.2), 0 4px 8px rgba(0,0,0,0.3)" 
           : "0 1px 4px rgba(0,0,0,0.3)",
         display: "flex",
         alignItems: "center",
@@ -1264,6 +1348,7 @@ export default function Phase10App() {
       if (!existing) break;
     }
     const pid = uid("p");
+    const phaseDeck = shufflePhaseDeck();
     const newRoom = {
       code,
       isSolo: false,
@@ -1279,12 +1364,14 @@ export default function Phase10App() {
       skipNext: false,
       turnState: "draw",
       turnStartedAt: null,
-      log: [`${name.trim()} created the room.`],
+      log: [`${name.trim()} created the room. 🐱`],
       winnerId: null,
       hasDrawn: false,
       roundWinner: null,
       chatMessages: [],
       difficulty: "medium",
+      phaseDeck: phaseDeck,
+      shuffledPhases: true,
     };
     await saveRoom(newRoom);
     setRoom(newRoom);
@@ -1302,12 +1389,12 @@ export default function Phase10App() {
     setBusy(true);
     setError("");
     const r = await loadRoom(code);
-    if (!r) { setBusy(false); return setError("No room found with that code."); }
+    if (!r) { setBusy(false); return setError("No room found with that code. 🐱"); }
     if (r.status !== "waiting") { setBusy(false); return setError("That game has already started."); }
     if (r.players.length >= 6) { setBusy(false); return setError("Room is full (max 6)."); }
     const pid = uid("p");
     r.players.push({ id: pid, name: name.trim(), phaseIndex: 0, hand: [], laidDownThisRound: false, score: 0 });
-    r.log.push(`${name.trim()} joined.`);
+    r.log.push(`${name.trim()} joined. 🐾`);
     r.chatMessages = r.chatMessages || [];
     await saveRoom(r);
     setRoom(r);
@@ -1336,6 +1423,7 @@ export default function Phase10App() {
     const players = room.players.map((p) => ({ ...p, hand: [], phaseIndex: 0, laidDownThisRound: false, score: 0 }));
     for (let i = 0; i < 10; i++) for (const p of players) p.hand.push(deck.pop());
     const discard = [deck.pop()];
+    const phaseDeck = shufflePhaseDeck();
     const updated = {
       ...room, 
       status: "playing", 
@@ -1348,11 +1436,13 @@ export default function Phase10App() {
       skipNext: false, 
       turnState: "draw", 
       turnStartedAt: Date.now(),
-      log: [...room.log, "Game started! Dealing 10 cards to each player."],
+      log: [...room.log, "🐱 Game started! Dealing 10 cards to each player."],
       hasDrawn: false,
       roundWinner: null,
       chatMessages: room.chatMessages || [],
       difficulty: room.difficulty || "medium",
+      phaseDeck: phaseDeck,
+      shuffledPhases: true,
     };
     await saveRoom(updated);
     setRoom(updated);
@@ -1388,6 +1478,7 @@ export default function Phase10App() {
       }
     }
     const discard = [deck.pop()];
+    const phaseDeck = shufflePhaseDeck();
     const soloRoom = {
       code: "SOLO", 
       isSolo: true, 
@@ -1402,12 +1493,14 @@ export default function Phase10App() {
       skipNext: false, 
       turnState: "draw", 
       turnStartedAt: Date.now(),
-      log: ["Solo game started — good luck!"], 
+      log: ["🐱 Solo game started — good luck! 🐾"], 
       winnerId: null,
       hasDrawn: false,
       roundWinner: null,
       chatMessages: [],
       difficulty: botDifficulty,
+      phaseDeck: phaseDeck,
+      shuffledPhases: true,
     };
     setRoom(soloRoom);
     setMyId("you");
@@ -1432,7 +1525,7 @@ export default function Phase10App() {
 
   const me = room?.players.find((p) => p.id === myId);
   const isMyTurn = room && (room.status === "playing") && room.players[room.currentPlayerIndex]?.id === myId;
-  const phase = me ? PHASES[Math.min(me.phaseIndex, 9)] : null;
+  const phase = getCurrentPhase(room, me);
   const hasDrawn = room?.hasDrawn || false;
 
   // Celebration detection
@@ -1617,7 +1710,7 @@ export default function Phase10App() {
     }
     const hintResults = getHints(me.hand, phase);
     if (hintResults.length === 0) {
-      setHints([{ message: "No possible moves found. Try drawing more cards!" }]);
+      setHints([{ message: "No possible moves found. Try drawing more cards! 🐱" }]);
     } else {
       setHints(hintResults);
     }
@@ -1765,9 +1858,9 @@ export default function Phase10App() {
 
   const bgStyle = {
     minHeight: "100vh",
-    background: "radial-gradient(ellipse at top, #1F5C42 0%, #0F3D2E 55%, #0A2A20 100%)",
+    background: "linear-gradient(135deg, #FFE4E1, #FFB6C1, #FFD4D4)",
     fontFamily: "'Poppins', system-ui, sans-serif",
-    color: "#F4E9C9",
+    color: "#5C3D6B",
     padding: "8px 10px",
     boxSizing: "border-box",
   };
@@ -1794,39 +1887,43 @@ export default function Phase10App() {
           }
         `}</style>
         <div style={{ maxWidth: 360, margin: "20px auto", textAlign: "center" }}>
-          <div style={{ fontSize: 36, fontWeight: 800, letterSpacing: 1, marginBottom: 2 }}>♫ OH UNNI</div>
-          <div style={{ opacity: 0.7, marginBottom: 20, fontSize: 13 }}>Friends online, or solo vs computer</div>
+          <div style={{ fontSize: 36, fontWeight: 800, letterSpacing: 1, marginBottom: 2, color: "#FF6B8A" }}>
+            🐱 PAWSOME PHASE 10
+          </div>
+          <div style={{ opacity: 0.7, marginBottom: 20, fontSize: 13, color: "#5C3D6B" }}>
+            Play with friends or vs computer 🐾
+          </div>
           <input
             placeholder="Your name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "none", marginBottom: 10, fontSize: 14, boxSizing: "border-box", fontFamily: "inherit" }}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "2px solid #FFB6C1", marginBottom: 10, fontSize: 14, boxSizing: "border-box", fontFamily: "inherit", background: "white" }}
           />
-          <button onClick={createRoom} disabled={busy} style={{ width: "100%", padding: "11px", borderRadius: 8, border: "none", background: "#E8B84B", color: "#1B4332", fontWeight: 700, fontSize: 14, marginBottom: 8, cursor: "pointer" }}>
+          <button onClick={createRoom} disabled={busy} style={{ width: "100%", padding: "11px", borderRadius: 8, border: "none", background: "#FF6B8A", color: "white", fontWeight: 700, fontSize: 14, marginBottom: 8, cursor: "pointer" }}>
             🎮 Create Room
           </button>
           <button
             onClick={() => { if (!name.trim()) return setError("Enter your name first."); setError(""); setScreen("soloSetup"); }}
-            style={{ width: "100%", padding: "11px", borderRadius: 8, border: "2px solid #E8B84B", background: "transparent", color: "#E8B84B", fontWeight: 700, fontSize: 14, marginBottom: 14, cursor: "pointer" }}
+            style={{ width: "100%", padding: "11px", borderRadius: 8, border: "2px solid #FF6B8A", background: "transparent", color: "#FF6B8A", fontWeight: 700, fontSize: 14, marginBottom: 14, cursor: "pointer" }}
           >
             🤖 Solo vs Computer
           </button>
           <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "12px 0", opacity: 0.5 }}>
-            <div style={{ flex: 1, height: 1, background: "#F4E9C9" }} />
+            <div style={{ flex: 1, height: 1, background: "#5C3D6B" }} />
             <span style={{ fontSize: 11 }}>OR JOIN</span>
-            <div style={{ flex: 1, height: 1, background: "#F4E9C9" }} />
+            <div style={{ flex: 1, height: 1, background: "#5C3D6B" }} />
           </div>
           <input
             placeholder="Room code"
             value={codeInput}
             onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
             maxLength={4}
-            style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "none", marginBottom: 8, fontSize: 14, textAlign: "center", letterSpacing: 4, boxSizing: "border-box", fontFamily: "inherit", textTransform: "uppercase" }}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "2px solid #FFB6C1", marginBottom: 8, fontSize: 14, textAlign: "center", letterSpacing: 4, boxSizing: "border-box", fontFamily: "inherit", textTransform: "uppercase", background: "white" }}
           />
-          <button onClick={joinRoom} disabled={busy} style={{ width: "100%", padding: "11px", borderRadius: 8, border: "2px solid #E8B84B", background: "transparent", color: "#E8B84B", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+          <button onClick={joinRoom} disabled={busy} style={{ width: "100%", padding: "11px", borderRadius: 8, border: "2px solid #FF6B8A", background: "transparent", color: "#FF6B8A", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
             🔗 Join Room
           </button>
-          {error && <div style={{ marginTop: 12, color: "#F2A5A0", fontSize: 12 }}>{error}</div>}
+          {error && <div style={{ marginTop: 12, color: "#FF6B8A", fontSize: 12 }}>{error}</div>}
         </div>
       </div>
     );
@@ -1837,8 +1934,8 @@ export default function Phase10App() {
     return (
       <div style={bgStyle}>
         <div style={{ maxWidth: 360, margin: "30px auto", textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>🤖 Solo vs Computer</div>
-          <div style={{ opacity: 0.7, fontSize: 12, marginBottom: 16 }}>How many bots?</div>
+          <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4, color: "#FF6B8A" }}>🤖 Solo vs Computer</div>
+          <div style={{ opacity: 0.7, fontSize: 12, color: "#5C3D6B", marginBottom: 16 }}>How many bots?</div>
           <div style={{ display: "flex", gap: 10, justifyContent: "center", marginBottom: 18 }}>
             {[1, 2, 3].map((n) => (
               <button
@@ -1846,20 +1943,20 @@ export default function Phase10App() {
                 onClick={() => setBotCount(n)}
                 style={{
                   width: 50, height: 50, borderRadius: 10, fontSize: 18, fontWeight: 800, cursor: "pointer",
-                  border: botCount === n ? "2px solid #E8B84B" : "2px solid rgba(244,233,201,0.3)",
-                  background: botCount === n ? "rgba(232,184,75,0.18)" : "transparent",
-                  color: "#F4E9C9",
+                  border: botCount === n ? "2px solid #FF6B8A" : "2px solid rgba(255,107,138,0.3)",
+                  background: botCount === n ? "rgba(255,107,138,0.18)" : "transparent",
+                  color: "#5C3D6B",
                 }}
               >
                 {n}
               </button>
             ))}
           </div>
-          <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 16 }}>
+          <div style={{ fontSize: 11, opacity: 0.6, color: "#5C3D6B", marginBottom: 16 }}>
             vs: {BOT_NAMES.slice(0, botCount).join(", ")}
           </div>
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 6 }}>🤖 Bot Difficulty</div>
+            <div style={{ fontSize: 11, opacity: 0.6, color: "#5C3D6B", marginBottom: 6 }}>🤖 Bot Difficulty</div>
             <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
               {["easy", "medium", "hard"].map((diff) => (
                 <button
@@ -1868,9 +1965,9 @@ export default function Phase10App() {
                   style={{
                     padding: "4px 16px",
                     borderRadius: "6px",
-                    border: botDifficulty === diff ? "2px solid #E8B84B" : "1px solid rgba(244,233,201,0.2)",
-                    background: botDifficulty === diff ? "rgba(232,184,75,0.2)" : "transparent",
-                    color: "#F4E9C9",
+                    border: botDifficulty === diff ? "2px solid #FF6B8A" : "1px solid rgba(255,107,138,0.3)",
+                    background: botDifficulty === diff ? "rgba(255,107,138,0.18)" : "transparent",
+                    color: "#5C3D6B",
                     fontSize: "12px",
                     cursor: "pointer",
                     textTransform: "capitalize",
@@ -1881,10 +1978,10 @@ export default function Phase10App() {
               ))}
             </div>
           </div>
-          <button onClick={startSoloGame} style={{ width: "100%", padding: "11px", borderRadius: 8, border: "none", background: "#E8B84B", color: "#1B4332", fontWeight: 700, fontSize: 14, cursor: "pointer", marginBottom: 10 }}>
+          <button onClick={startSoloGame} style={{ width: "100%", padding: "11px", borderRadius: 8, border: "none", background: "#FF6B8A", color: "white", fontWeight: 700, fontSize: 14, cursor: "pointer", marginBottom: 10 }}>
             🎮 Start Game
           </button>
-          <button onClick={() => setScreen("home")} style={{ width: "100%", background: "none", border: "none", color: "#F4E9C9", opacity: 0.6, fontSize: 12, cursor: "pointer" }}>
+          <button onClick={() => setScreen("home")} style={{ width: "100%", background: "none", border: "none", color: "#5C3D6B", opacity: 0.6, fontSize: 12, cursor: "pointer" }}>
             Back
           </button>
         </div>
@@ -1897,26 +1994,26 @@ export default function Phase10App() {
     return (
       <div style={bgStyle}>
         <div style={{ maxWidth: 380, margin: "20px auto" }}>
-          <div style={{ textAlign: "center", fontSize: 11, opacity: 0.6 }}>ROOM CODE</div>
-          <div style={{ textAlign: "center", fontSize: 40, fontWeight: 800, letterSpacing: 5, marginBottom: 16, color: "#E8B84B" }}>{room.code}</div>
-          <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 14, marginBottom: 14 }}>
-            <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>PLAYERS ({room.players.length}/6)</div>
+          <div style={{ textAlign: "center", fontSize: 11, opacity: 0.6, color: "#5C3D6B" }}>ROOM CODE</div>
+          <div style={{ textAlign: "center", fontSize: 40, fontWeight: 800, letterSpacing: 5, marginBottom: 16, color: "#FF6B8A" }}>{room.code}</div>
+          <div style={{ background: "rgba(255,107,138,0.1)", borderRadius: 10, padding: 14, marginBottom: 14, border: "1px solid rgba(255,107,138,0.2)" }}>
+            <div style={{ fontSize: 12, opacity: 0.7, color: "#5C3D6B", marginBottom: 8 }}>🐱 PLAYERS ({room.players.length}/6)</div>
             {room.players.map((p) => (
-              <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 14 }}>
-                <span>{p.name} {p.id === room.hostId ? "★" : ""}</span>
+              <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 14, color: "#5C3D6B" }}>
+                <span>{p.name} {p.id === room.hostId ? "⭐" : ""}</span>
                 {p.id === myId && <span style={{ opacity: 0.6, fontSize: 11 }}>you</span>}
               </div>
             ))}
           </div>
           {myId === room.hostId ? (
-            <button onClick={startGame} disabled={busy || room.players.length < 2} style={{ width: "100%", padding: "12px", borderRadius: 8, border: "none", background: room.players.length < 2 ? "#5a5a4a" : "#E8B84B", color: "#1B4332", fontWeight: 700, fontSize: 15, cursor: room.players.length < 2 ? "default" : "pointer" }}>
+            <button onClick={startGame} disabled={busy || room.players.length < 2} style={{ width: "100%", padding: "12px", borderRadius: 8, border: "none", background: room.players.length < 2 ? "#D4A0A0" : "#FF6B8A", color: "white", fontWeight: 700, fontSize: 15, cursor: room.players.length < 2 ? "default" : "pointer" }}>
               {room.players.length < 2 ? "⏳ Waiting…" : "🚀 Start Game"}
             </button>
           ) : (
-            <div style={{ textAlign: "center", opacity: 0.7, fontSize: 13 }}>⏳ Waiting for host…</div>
+            <div style={{ textAlign: "center", opacity: 0.7, fontSize: 13, color: "#5C3D6B" }}>⏳ Waiting for host…</div>
           )}
-          {error && <div style={{ marginTop: 10, color: "#F2A5A0", fontSize: 12, textAlign: "center" }}>{error}</div>}
-          <button onClick={leaveRoom} style={{ marginTop: 16, width: "100%", background: "none", border: "none", color: "#F4E9C9", opacity: 0.5, fontSize: 12, cursor: "pointer" }}>Leave room</button>
+          {error && <div style={{ marginTop: 10, color: "#FF6B8A", fontSize: 12, textAlign: "center" }}>{error}</div>}
+          <button onClick={leaveRoom} style={{ marginTop: 16, width: "100%", background: "none", border: "none", color: "#5C3D6B", opacity: 0.5, fontSize: 12, cursor: "pointer" }}>Leave room</button>
         </div>
       </div>
     );
@@ -1926,7 +2023,7 @@ export default function Phase10App() {
   if ((screen === "game" || room?.status === "gameOver") && room) {
     const currentPlayer = room.players[room.currentPlayerIndex];
     const topDiscard = room.discard[room.discard.length - 1];
-    const timerColor = timeRemaining <= 10 ? "#C4453E" : timeRemaining <= 20 ? "#D9A029" : "#7DBE8C";
+    const timerColor = timeRemaining <= 10 ? "#FF6B8A" : timeRemaining <= 20 ? "#C8A2C8" : "#7DBE8C";
     const isMyTurnGlow = isMyTurn && room.status === "playing";
 
     return (
@@ -1945,15 +2042,16 @@ export default function Phase10App() {
             bottom: '20px',
             left: '50%',
             transform: 'translateX(-50%)',
-            background: 'rgba(0,0,0,0.9)',
+            background: 'rgba(255,107,138,0.95)',
             padding: '12px 20px',
             borderRadius: '10px',
             zIndex: 9999,
             maxWidth: '400px',
-            border: '2px solid #E8B84B',
+            border: '2px solid white',
             textAlign: 'center',
+            color: 'white',
           }}>
-            <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#E8B84B', marginBottom: '4px' }}>💡 Hints</div>
+            <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>💡 Hints</div>
             {hints.map((hint, i) => (
               <div key={i} style={{ fontSize: '12px', opacity: 0.9, padding: '2px 0' }}>
                 {hint.message}
@@ -1966,8 +2064,8 @@ export default function Phase10App() {
                 padding: '2px 12px',
                 borderRadius: '4px',
                 border: 'none',
-                background: '#E8B84B',
-                color: '#1B4332',
+                background: 'white',
+                color: '#FF6B8A',
                 fontSize: '11px',
                 cursor: 'pointer',
               }}
@@ -1983,30 +2081,30 @@ export default function Phase10App() {
             {/* Compact Header */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ fontWeight: 800, fontSize: "16px" }}>OH UNNI</span>
-                <span style={{ fontSize: "11px", opacity: 0.6 }}>· round {room.round}</span>
-                {room.isSolo && <span style={{ fontSize: "10px", opacity: 0.5, background: "rgba(0,0,0,0.2)", padding: "1px 8px", borderRadius: "10px" }}>solo</span>}
+                <span style={{ fontWeight: 800, fontSize: "16px", color: "#FF6B8A" }}>🐱 PAWSOME</span>
+                <span style={{ fontSize: "11px", opacity: 0.6, color: "#5C3D6B" }}>· round {room.round}</span>
+                {room.isSolo && <span style={{ fontSize: "10px", opacity: 0.5, background: "rgba(255,107,138,0.2)", padding: "1px 8px", borderRadius: "10px", color: "#FF6B8A" }}>solo</span>}
                 {room.isSolo && (
-                  <span style={{ fontSize: "9px", opacity: 0.5, background: "rgba(232,184,75,0.2)", padding: "1px 8px", borderRadius: "10px", color: "#E8B84B" }}>
+                  <span style={{ fontSize: "9px", opacity: 0.5, background: "rgba(255,107,138,0.2)", padding: "1px 8px", borderRadius: "10px", color: "#FF6B8A" }}>
                     {room.difficulty || "medium"}
                   </span>
                 )}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <button onClick={() => setShowHelp(true)} style={{ background: "none", border: "1px solid rgba(244,233,201,0.2)", color: "#F4E9C9", borderRadius: "5px", padding: "2px 8px", fontSize: "14px", cursor: "pointer" }}>❓</button>
-                <button onClick={undoLastMove} style={{ background: "none", border: "1px solid rgba(244,233,201,0.2)", color: "#F4E9C9", borderRadius: "5px", padding: "2px 8px", fontSize: "14px", cursor: "pointer" }} title="Undo last move">↩️</button>
-                <button onClick={getHintsForHand} style={{ background: "none", border: "1px solid rgba(244,233,201,0.2)", color: "#F4E9C9", borderRadius: "5px", padding: "2px 8px", fontSize: "14px", cursor: "pointer" }} title="Get hints">💡</button>
-                <button onClick={() => setShowChat(!showChat)} style={{ background: "none", border: "1px solid rgba(244,233,201,0.2)", color: "#F4E9C9", borderRadius: "5px", padding: "2px 8px", fontSize: "14px", cursor: "pointer" }}>💬</button>
+                <button onClick={() => setShowHelp(true)} style={{ background: "none", border: "1px solid rgba(255,107,138,0.3)", color: "#5C3D6B", borderRadius: "5px", padding: "2px 8px", fontSize: "14px", cursor: "pointer" }}>❓</button>
+                <button onClick={undoLastMove} style={{ background: "none", border: "1px solid rgba(255,107,138,0.3)", color: "#5C3D6B", borderRadius: "5px", padding: "2px 8px", fontSize: "14px", cursor: "pointer" }} title="Undo last move">↩️</button>
+                <button onClick={getHintsForHand} style={{ background: "none", border: "1px solid rgba(255,107,138,0.3)", color: "#5C3D6B", borderRadius: "5px", padding: "2px 8px", fontSize: "14px", cursor: "pointer" }} title="Get hints">💡</button>
+                <button onClick={() => setShowChat(!showChat)} style={{ background: "none", border: "1px solid rgba(255,107,138,0.3)", color: "#5C3D6B", borderRadius: "5px", padding: "2px 8px", fontSize: "14px", cursor: "pointer" }}>💬</button>
                 {room.status === "playing" && (
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px", background: "rgba(0,0,0,0.25)", borderRadius: "12px", padding: "2px 10px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px", background: "rgba(255,107,138,0.1)", borderRadius: "12px", padding: "2px 10px", border: "1px solid rgba(255,107,138,0.2)" }}>
                     <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: timerColor }} />
                     <span style={{ fontSize: "12px", fontWeight: 700, color: timerColor }}>{timeRemaining}s</span>
                   </div>
                 )}
-                <button onClick={toggleMute} style={{ background: "none", border: "none", color: "#F4E9C9", fontSize: "15px", cursor: "pointer", padding: "2px 4px" }}>
+                <button onClick={toggleMute} style={{ background: "none", border: "none", color: "#5C3D6B", fontSize: "15px", cursor: "pointer", padding: "2px 4px" }}>
                   {isMuted ? "🔇" : "🔊"}
                 </button>
-                <button onClick={leaveRoom} style={{ background: "none", border: "1px solid rgba(244,233,201,0.2)", color: "#F4E9C9", borderRadius: "5px", padding: "2px 8px", fontSize: "10px", cursor: "pointer" }}>Leave</button>
+                <button onClick={leaveRoom} style={{ background: "none", border: "1px solid rgba(255,107,138,0.2)", color: "#5C3D6B", borderRadius: "5px", padding: "2px 8px", fontSize: "10px", cursor: "pointer" }}>Leave</button>
               </div>
             </div>
 
@@ -2021,7 +2119,7 @@ export default function Phase10App() {
 
             {/* Game Over Banner */}
             {room.status === "gameOver" && (
-              <div style={{ background: "#E8B84B", color: "#1B4332", borderRadius: "8px", padding: "8px", marginBottom: "8px", textAlign: "center", fontWeight: 700, fontSize: "14px" }}>
+              <div style={{ background: "linear-gradient(135deg, #FFD700, #FF6B8A)", color: "white", borderRadius: "8px", padding: "8px", marginBottom: "8px", textAlign: "center", fontWeight: 700, fontSize: "14px" }}>
                 🏆 {room.players.find((p) => p.id === room.winnerId)?.name} WINS! 🎉
               </div>
             )}
@@ -2032,28 +2130,28 @@ export default function Phase10App() {
                 const isActive = p.id === currentPlayer?.id && room.status === "playing";
                 return (
                   <div key={p.id} style={{
-                    background: isActive ? "rgba(232,184,75,0.25)" : "rgba(0,0,0,0.2)",
-                    border: isActive ? "2px solid #E8B84B" : "1px solid rgba(244,233,201,0.08)",
+                    background: isActive ? "rgba(255,107,138,0.25)" : "rgba(255,107,138,0.08)",
+                    border: isActive ? "2px solid #FF6B8A" : "1px solid rgba(255,107,138,0.1)",
                     borderRadius: "6px",
                     padding: "3px 8px",
                     fontSize: "10px",
                     whiteSpace: "nowrap",
                     minWidth: "60px",
                     flex: "0 0 auto",
-                    boxShadow: isActive ? "0 0 20px rgba(232,184,75,0.3)" : "none",
+                    boxShadow: isActive ? "0 0 20px rgba(255,107,138,0.2)" : "none",
                     transition: "all 0.3s ease",
                   }}>
-                    <div style={{ fontWeight: 700, fontSize: "11px", color: isActive ? "#E8B84B" : "#F4E9C9" }}>
-                      {p.name}{p.id === myId ? "" : p.isBot ? " 🤖" : ""}
+                    <div style={{ fontWeight: 700, fontSize: "11px", color: isActive ? "#FF6B8A" : "#5C3D6B" }}>
+                      {p.isBot ? "🐱 " : ""}{p.name}{p.id === myId ? "" : ""}
                       {p.id === myId && <span style={{ opacity: 0.5, fontSize: "8px", marginLeft: "2px" }}>you</span>}
                       {isActive && <span style={{ marginLeft: "4px", fontSize: "10px" }}>🎯</span>}
                     </div>
-                    <div style={{ opacity: 0.7, fontSize: "9px" }}>
+                    <div style={{ opacity: 0.7, fontSize: "9px", color: "#5C3D6B" }}>
                       Ph{Math.min(p.phaseIndex + 1, 10)} · {p.hand.length} cards
                     </div>
                     <div style={{ display: "flex", gap: "1px", marginTop: "2px" }}>
                       {Array.from({ length: 10 }).map((_, i) => (
-                        <div key={i} style={{ width: "5px", height: "5px", borderRadius: "1px", background: i < p.phaseIndex ? "#E8B84B" : "rgba(244,233,201,0.15)" }} />
+                        <div key={i} style={{ width: "5px", height: "5px", borderRadius: "1px", background: i < p.phaseIndex ? "#FF6B8A" : "rgba(255,107,138,0.15)" }} />
                       ))}
                     </div>
                   </div>
@@ -2062,9 +2160,9 @@ export default function Phase10App() {
             </div>
 
             {/* Deck & Discard Row */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "16px", background: "rgba(0,0,0,0.15)", borderRadius: "10px", padding: "8px 12px", marginBottom: "8px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "16px", background: "rgba(255,107,138,0.08)", borderRadius: "10px", padding: "8px 12px", marginBottom: "8px", border: "1px solid rgba(255,107,138,0.1)" }}>
               <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "8px", opacity: 0.5, marginBottom: "2px" }}>DECK ({room.deck.length})</div>
+                <div style={{ fontSize: "8px", opacity: 0.5, color: "#5C3D6B", marginBottom: "2px" }}>🐱 DECK ({room.deck.length})</div>
                 <CardFace 
                   faceDown 
                   size="sm" 
@@ -2074,10 +2172,10 @@ export default function Phase10App() {
                   onClick={isMyTurn && room.turnState === "draw" ? () => drawFrom("deck") : undefined} 
                 />
               </div>
-              <div style={{ fontSize: "18px", opacity: 0.3 }}>→</div>
+              <div style={{ fontSize: "18px", opacity: 0.3 }}>🐾</div>
               <div style={{ textAlign: "center" }} data-dropzone="discard">
-                <div style={{ fontSize: "8px", opacity: 0.5, marginBottom: "2px" }}>
-                  DISCARD {isMyTurn && room.turnState === "action" ? "⬇️" : ""}
+                <div style={{ fontSize: "8px", opacity: 0.5, color: "#5C3D6B", marginBottom: "2px" }}>
+                  🐾 DISCARD {isMyTurn && room.turnState === "action" ? "⬇️" : ""}
                 </div>
                 <CardFace 
                   card={topDiscard} 
@@ -2090,8 +2188,8 @@ export default function Phase10App() {
               </div>
               {phase && room.status === "playing" && (
                 <div style={{ textAlign: "center", maxWidth: "120px" }}>
-                  <div style={{ fontSize: "8px", opacity: 0.5 }}>PHASE {phase.id}</div>
-                  <div style={{ fontSize: "10px", fontWeight: 700, lineHeight: "1.2" }}>{phase.label}</div>
+                  <div style={{ fontSize: "8px", opacity: 0.5, color: "#5C3D6B" }}>🐱 PHASE {phase.id}</div>
+                  <div style={{ fontSize: "10px", fontWeight: 700, lineHeight: "1.2", color: "#FF6B8A" }}>{phase.label}</div>
                   {me?.laidDownThisRound && (
                     <div style={{ fontSize: "8px", color: "#7DBE8C", fontWeight: "bold" }}>✅ Done</div>
                   )}
@@ -2106,12 +2204,12 @@ export default function Phase10App() {
                 fontSize: "11px", 
                 opacity: 0.7, 
                 marginBottom: "6px",
-                color: isMyTurnGlow ? "#E8B84B" : "#F4E9C9",
+                color: isMyTurnGlow ? "#FF6B8A" : "#5C3D6B",
                 fontWeight: isMyTurnGlow ? "bold" : "normal",
               }}>
                 {isMyTurn
                   ? room.turnState === "draw"
-                    ? "🎯 Tap deck or discard to draw!"
+                    ? "🎯 Tap 🐱 deck or 🐾 discard to draw!"
                     : "🃏 Drag cards to phase slots or discard"
                   : `⏳ ${currentPlayer?.name}'s turn…`}
               </div>
@@ -2125,16 +2223,16 @@ export default function Phase10App() {
                   const canHitHere = isMyTurn && me?.laidDownThisRound && room.turnState === "action";
                   return (
                     <div key={ownerId} style={{ marginBottom: "4px" }}>
-                      <div style={{ fontSize: "9px", opacity: 0.5, marginBottom: "2px" }}>{owner?.name}'s phase</div>
+                      <div style={{ fontSize: "9px", opacity: 0.5, color: "#5C3D6B", marginBottom: "2px" }}>{owner?.name}'s phase</div>
                       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                         {groupsArr.map((g, gi) => (
                           <div
                             key={gi}
                             data-dropzone={`hit:${ownerId}:${gi}`}
                             style={{
-                              display: "flex", gap: "2px", background: "rgba(0,0,0,0.1)", padding: "4px", borderRadius: "4px",
-                              border: canHitHere ? "2px dashed rgba(232,184,75,0.5)" : "1px dashed transparent",
-                              boxShadow: canHitHere ? "0 0 15px rgba(232,184,75,0.15)" : "none",
+                              display: "flex", gap: "2px", background: "rgba(255,107,138,0.05)", padding: "4px", borderRadius: "4px",
+                              border: canHitHere ? "2px dashed #FF6B8A" : "1px dashed transparent",
+                              boxShadow: canHitHere ? "0 0 15px rgba(255,107,138,0.15)" : "none",
                             }}
                           >
                             {g.cards.map((c) => <CardFace key={c.id} card={c} size="sm" dealAnimation={dealAnimation} />)}
@@ -2150,18 +2248,18 @@ export default function Phase10App() {
             {/* Phase Builder - ALWAYS VISIBLE */}
             {phase && room.status === "playing" && !me?.laidDownThisRound && (
               <div style={{ 
-                background: "rgba(0,0,0,0.25)", 
+                background: "rgba(255,107,138,0.08)", 
                 borderRadius: "8px", 
                 padding: "8px", 
                 marginBottom: "8px",
-                border: isMyTurnGlow ? "1px solid #E8B84B" : "1px solid rgba(232,184,75,0.15)",
-                boxShadow: isMyTurnGlow ? "0 0 30px rgba(232,184,75,0.1)" : "none",
+                border: isMyTurnGlow ? "2px solid #FF6B8A" : "1px solid rgba(255,107,138,0.2)",
+                boxShadow: isMyTurnGlow ? "0 0 30px rgba(255,107,138,0.1)" : "none",
               }}>
-                <div style={{ fontSize: "10px", opacity: 0.6, marginBottom: "6px", display: "flex", justifyContent: "space-between" }}>
+                <div style={{ fontSize: "10px", opacity: 0.6, color: "#5C3D6B", marginBottom: "6px", display: "flex", justifyContent: "space-between" }}>
                   <span>🎯 Build Phase {phase.id}</span>
                   <span style={{ fontSize: "9px" }}>
                     {hasDrawn ? "🃏 Drawn - Ready!" : "⏳ Draw first!"}
-                    {undoStack.length > 0 && <span style={{ marginLeft: "6px", color: "#E8B84B" }}>↩️ {undoStack.length}</span>}
+                    {undoStack.length > 0 && <span style={{ marginLeft: "6px", color: "#FF6B8A" }}>↩️ {undoStack.length}</span>}
                   </span>
                 </div>
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
@@ -2170,16 +2268,16 @@ export default function Phase10App() {
                       key={i}
                       data-dropzone={`group:${i}`}
                       style={{
-                        background: "rgba(0,0,0,0.15)", borderRadius: "6px", padding: "4px", minWidth: "100px", flex: "1",
-                        border: isMyTurnGlow ? "2px dashed rgba(232,184,75,0.4)" : "1px dashed rgba(232,184,75,0.15)",
+                        background: "rgba(255,255,255,0.3)", borderRadius: "6px", padding: "4px", minWidth: "100px", flex: "1",
+                        border: isMyTurnGlow ? "2px dashed #FF6B8A" : "1px dashed rgba(255,107,138,0.3)",
                         transition: "all 0.3s ease",
                       }}
                     >
-                      <div style={{ fontSize: "8px", opacity: 0.5, marginBottom: "2px" }}>
+                      <div style={{ fontSize: "8px", opacity: 0.5, color: "#5C3D6B", marginBottom: "2px" }}>
                         {req.type === "set" ? "Set" : req.type === "run" ? "Run" : "Color"} of {req.count} ({groups[i]?.length || 0}/{req.count})
                       </div>
                       <div style={{ display: "flex", gap: "2px", flexWrap: "wrap", minHeight: "30px" }}>
-                        {(groups[i] || []).length === 0 && <div style={{ fontSize: "9px", opacity: 0.3, alignSelf: "center" }}>⬇️ drop</div>}
+                        {(groups[i] || []).length === 0 && <div style={{ fontSize: "9px", opacity: 0.3, alignSelf: "center", color: "#5C3D6B" }}>⬇️ drop</div>}
                         {(groups[i] || []).map((c) => (
                           <CardFace key={c.id} card={c} size="sm" draggable onPointerDownDrag={(e) => beginDrag(e, c)} dealAnimation={dealAnimation} />
                         ))}
@@ -2195,8 +2293,8 @@ export default function Phase10App() {
                       padding: "4px 12px", 
                       borderRadius: "6px", 
                       border: "none", 
-                      background: (!isMyTurn || !hasDrawn) ? "#5a5a4a" : "#E8B84B", 
-                      color: (!isMyTurn || !hasDrawn) ? "#888" : "#1B4332", 
+                      background: (!isMyTurn || !hasDrawn) ? "#D4A0A0" : "#FF6B8A", 
+                      color: "white", 
                       fontWeight: 700, 
                       fontSize: "11px", 
                       cursor: (!isMyTurn || !hasDrawn) ? "default" : "pointer",
@@ -2210,26 +2308,26 @@ export default function Phase10App() {
                     style={{ 
                       padding: "4px 12px", 
                       borderRadius: "6px", 
-                      border: "1px solid rgba(244,233,201,0.3)", 
+                      border: "1px solid rgba(255,107,138,0.3)", 
                       background: "transparent", 
-                      color: "#F4E9C9", 
+                      color: "#5C3D6B", 
                       fontSize: "11px", 
                       cursor: "pointer" 
                     }}
                   >
                     ✖ Clear All
                   </button>
-                  {!isMyTurn && <span style={{ fontSize: "9px", opacity: 0.5 }}>⏳ Wait for your turn</span>}
-                  {isMyTurn && !hasDrawn && <span style={{ fontSize: "9px", color: "#E8B84B" }}>⚠️ Draw a card first!</span>}
+                  {!isMyTurn && <span style={{ fontSize: "9px", opacity: 0.5, color: "#5C3D6B" }}>⏳ Wait for your turn</span>}
+                  {isMyTurn && !hasDrawn && <span style={{ fontSize: "9px", color: "#FF6B8A" }}>⚠️ Draw a card first!</span>}
                 </div>
-                {error && <div style={{ marginTop: "4px", color: "#F2A5A0", fontSize: "10px" }}>{error}</div>}
+                {error && <div style={{ marginTop: "4px", color: "#FF6B8A", fontSize: "10px" }}>{error}</div>}
               </div>
             )}
 
             {/* Phase Complete Message */}
             {phase && room.status === "playing" && me?.laidDownThisRound && (
               <div style={{ 
-                background: "rgba(0,0,0,0.15)", 
+                background: "rgba(125,190,140,0.15)", 
                 borderRadius: "8px", 
                 padding: "8px", 
                 marginBottom: "8px",
@@ -2239,7 +2337,7 @@ export default function Phase10App() {
                 <div style={{ fontSize: "12px", fontWeight: "bold", color: "#7DBE8C" }}>
                   ✅ Phase {phase.id} Complete! 🎉
                 </div>
-                <div style={{ fontSize: "10px", opacity: 0.6 }}>
+                <div style={{ fontSize: "10px", opacity: 0.6, color: "#5C3D6B" }}>
                   You laid down: {phase.label}
                 </div>
               </div>
@@ -2248,20 +2346,20 @@ export default function Phase10App() {
             {/* Hand - with glow/bounce when it's your turn */}
             {me && (
               <div style={{ marginTop: "6px" }} data-dropzone="hand">
-                <div style={{ fontSize: "10px", opacity: 0.5, marginBottom: "4px" }}>
+                <div style={{ fontSize: "10px", opacity: 0.5, color: "#5C3D6B", marginBottom: "4px" }}>
                   Your hand ({me.hand.length})
-                  {isMyTurnGlow && <span style={{ marginLeft: "8px", color: "#E8B84B" }}>✨ Your turn!</span>}
+                  {isMyTurnGlow && <span style={{ marginLeft: "8px", color: "#FF6B8A" }}>✨ Your turn!</span>}
                 </div>
                 <div style={{ 
                   display: "flex", 
                   gap: "3px", 
                   flexWrap: "wrap", 
                   justifyContent: "center", 
-                  background: isMyTurnGlow ? "rgba(232,184,75,0.08)" : "rgba(0,0,0,0.1)", 
+                  background: isMyTurnGlow ? "rgba(255,107,138,0.06)" : "rgba(255,107,138,0.03)", 
                   borderRadius: "8px", 
                   padding: "6px", 
                   minHeight: "50px",
-                  boxShadow: isMyTurnGlow ? "0 0 40px rgba(232,184,75,0.08)" : "none",
+                  boxShadow: isMyTurnGlow ? "0 0 40px rgba(255,107,138,0.05)" : "none",
                   transition: "all 0.5s ease",
                 }}>
                   {me.hand.slice().sort((a, b) => (a.number || 99) - (b.number || 99)).map((c) => (
@@ -2282,7 +2380,7 @@ export default function Phase10App() {
             )}
 
             {/* Log */}
-            <div style={{ marginTop: "6px", fontSize: "9px", opacity: 0.4, maxHeight: "40px", overflowY: "auto" }}>
+            <div style={{ marginTop: "6px", fontSize: "9px", opacity: 0.4, color: "#5C3D6B", maxHeight: "40px", overflowY: "auto" }}>
               {room.log.slice(-4).map((l, i) => <div key={i}>📝 {l}</div>)}
             </div>
           </div>
