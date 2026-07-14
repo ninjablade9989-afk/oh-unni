@@ -8,9 +8,14 @@ import { subscribeToRoom } from './supabase';
    - Pre-build phases anytime
    - Confirm only after drawing
    - Turn indicator (glow/bounce)
-   - Round winner celebration with player name
+   - Round winner celebration
    - Help/How-to-play modal
    - Phase cards stay when discarding
+   - Undo button
+   - Hint system
+   - Difficulty levels (Easy/Medium/Hard)
+   - Multiplayer chat
+   - Card dealing animations
 --------------------------------------------------------------- */
 
 // Audio Manager
@@ -113,6 +118,26 @@ const AudioManager = {
         gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.12);
         osc.start(startTime);
         osc.stop(startTime + 0.12);
+      });
+    } catch (e) {}
+  },
+  
+  playDealSound() {
+    try {
+      const ctx = this.init();
+      const notes = [400, 500, 600, 700, 800];
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = freq;
+        osc.type = 'sine';
+        const startTime = ctx.currentTime + i * 0.05;
+        gain.gain.setValueAtTime(0.05, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.06);
+        osc.start(startTime);
+        osc.stop(startTime + 0.06);
       });
     } catch (e) {}
   },
@@ -262,6 +287,106 @@ function HelpModal({ onClose }) {
           }}
         >
           Got it! 🎮
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Chat Component
+function Chat({ messages, onSendMessage, currentPlayer }) {
+  const [input, setInput] = useState("");
+  const chatEndRef = useRef(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleSend = () => {
+    if (input.trim()) {
+      onSendMessage(input.trim());
+      setInput("");
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === "Enter") {
+      handleSend();
+    }
+  };
+
+  return (
+    <div style={{
+      background: "rgba(0,0,0,0.3)",
+      borderRadius: "8px",
+      padding: "8px",
+      marginBottom: "8px",
+      maxHeight: "150px",
+      display: "flex",
+      flexDirection: "column",
+    }}>
+      <div style={{
+        fontSize: "10px",
+        opacity: 0.6,
+        marginBottom: "4px",
+        display: "flex",
+        justifyContent: "space-between",
+      }}>
+        <span>💬 Chat</span>
+        <span style={{ fontSize: "8px", opacity: 0.4 }}>{messages.length} messages</span>
+      </div>
+      <div style={{
+        flex: 1,
+        overflowY: "auto",
+        maxHeight: "80px",
+        marginBottom: "4px",
+        fontSize: "11px",
+      }}>
+        {messages.map((msg, i) => (
+          <div key={i} style={{
+            padding: "2px 4px",
+            borderBottom: "1px solid rgba(244,233,201,0.05)",
+            color: msg.playerId === "system" ? "#E8B84B" : "#F4E9C9",
+          }}>
+            <span style={{ fontWeight: "bold", opacity: 0.8 }}>
+              {msg.playerName}:
+            </span>
+            <span style={{ marginLeft: "4px", opacity: 0.9 }}>{msg.text}</span>
+          </div>
+        ))}
+        <div ref={chatEndRef} />
+      </div>
+      <div style={{ display: "flex", gap: "4px" }}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyPress={handleKeyPress}
+          placeholder="Type a message..."
+          style={{
+            flex: 1,
+            padding: "4px 8px",
+            borderRadius: "4px",
+            border: "1px solid rgba(244,233,201,0.2)",
+            background: "rgba(0,0,0,0.3)",
+            color: "#F4E9C9",
+            fontSize: "11px",
+            outline: "none",
+          }}
+        />
+        <button
+          onClick={handleSend}
+          style={{
+            padding: "4px 12px",
+            borderRadius: "4px",
+            border: "none",
+            background: "#E8B84B",
+            color: "#1B4332",
+            fontWeight: "bold",
+            fontSize: "11px",
+            cursor: "pointer",
+          }}
+        >
+          Send
         </button>
       </div>
     </div>
@@ -491,55 +616,182 @@ function canHit(card, tableGroup) {
   return false;
 }
 
-/* ---------- bot brain ---------- */
+/* ---------- Hint System ---------- */
 
-function combinationsOf(indices, k, cap, counter) {
-  const results = [];
-  function comb(start, chosen) {
-    if (counter.n > cap) return;
-    if (chosen.length === k) {
-      results.push(chosen.slice());
-      counter.n++;
-      return;
-    }
-    for (let i = start; i <= indices.length - (k - chosen.length); i++) {
-      chosen.push(indices[i]);
-      comb(i + 1, chosen);
-      chosen.pop();
-      if (counter.n > cap) return;
-    }
-  }
-  comb(0, []);
-  return results;
+function getHints(hand, phase) {
+  if (!phase) return [];
+  const hints = [];
+  const reqs = phase.reqs;
+  
+  reqs.forEach((req, idx) => {
+    const combinations = getCombinations(hand, req.count);
+    combinations.forEach(combo => {
+      if (validateGroup(combo, req)) {
+        hints.push({
+          groupIndex: idx,
+          cards: combo,
+          message: `Try ${req.type} of ${req.count} with cards: ${combo.map(c => c.number || '★').join(', ')}`
+        });
+      }
+    });
+  });
+  
+  return hints.slice(0, 3);
 }
 
-function attemptAutoLayout(hand, reqs) {
-  const n = hand.length;
-  const used = new Array(n).fill(false);
-  const groups = reqs.map(() => []);
-  const counter = { n: 0 };
-  const CAP = 4000;
+function getCombinations(arr, k) {
+  if (k === 0) return [[]];
+  if (arr.length === 0) return [];
+  const [first, ...rest] = arr;
+  const withFirst = getCombinations(rest, k - 1).map(combo => [first, ...combo]);
+  const withoutFirst = getCombinations(rest, k);
+  return [...withFirst, ...withoutFirst];
+}
 
-  function backtrack(reqIdx) {
-    if (counter.n > CAP) return false;
-    if (reqIdx === reqs.length) return true;
-    const req = reqs[reqIdx];
-    const unused = [];
-    for (let i = 0; i < n; i++) if (!used[i]) unused.push(i);
-    const combos = combinationsOf(unused, req.count, CAP, counter);
-    for (const combo of combos) {
-      const groupCards = combo.map((i) => hand[i]);
-      if (validateGroup(groupCards, req)) {
-        combo.forEach((i) => (used[i] = true));
-        groups[reqIdx] = groupCards;
-        if (backtrack(reqIdx + 1)) return true;
-        combo.forEach((i) => (used[i] = false));
-      }
-      if (counter.n > CAP) return false;
+/* ---------- bot brain with difficulty ---------- */
+
+function botPlayTurn(r0, playerId, difficulty = "medium") {
+  console.log('🤖 Bot turn started for:', playerId, 'Difficulty:', difficulty);
+  let r = r0;
+  
+  // Bot decision based on difficulty
+  const botDecision = {
+    // Easy: Random choices
+    easy: {
+      drawSource: () => Math.random() > 0.5 ? "deck" : "discard",
+      discardStrategy: (hand) => {
+        const sorted = [...hand].sort((a, b) => cardScore(b) - cardScore(a));
+        return sorted[Math.floor(Math.random() * Math.min(sorted.length, 3))];
+      },
+      phasePriority: () => Math.random() > 0.3,
+    },
+    // Medium: Strategic
+    medium: {
+      drawSource: (r) => {
+        const top = r.discard[r.discard.length - 1];
+        if (top && top.kind === "number") {
+          const matches = r.players.find(p => p.id === playerId).hand.filter(c => c.number === top.number).length;
+          return matches >= 1 ? "discard" : "deck";
+        }
+        return "deck";
+      },
+      discardStrategy: (hand) => {
+        const nonWild = hand.filter(c => c.kind !== "wild");
+        const sorted = nonWild.length ? nonWild.sort((a, b) => cardScore(b) - cardScore(a)) : hand;
+        return sorted[0];
+      },
+      phasePriority: () => true,
+    },
+    // Hard: Advanced
+    hard: {
+      drawSource: (r) => {
+        const top = r.discard[r.discard.length - 1];
+        if (top && top.kind === "number") {
+          const matches = r.players.find(p => p.id === playerId).hand.filter(c => c.number === top.number).length;
+          return matches >= 2 ? "discard" : "deck";
+        }
+        if (top && top.kind === "wild") return "discard";
+        return "deck";
+      },
+      discardStrategy: (hand, phase) => {
+        // Discard cards that don't help the current phase
+        const phaseCards = phase ? getPhaseCards(hand, phase) : [];
+        const nonPhase = hand.filter(c => !phaseCards.includes(c));
+        if (nonPhase.length > 0) {
+          return nonPhase.sort((a, b) => cardScore(b) - cardScore(a))[0];
+        }
+        return hand.sort((a, b) => cardScore(b) - cardScore(a))[0];
+      },
+      phasePriority: () => true,
     }
-    return false;
+  };
+  
+  const strategy = botDecision[difficulty] || botDecision.medium;
+  
+  // Draw
+  if (r.turnState === "draw") {
+    const source = typeof strategy.drawSource === 'function' ? strategy.drawSource(r) : "deck";
+    console.log('🤖 Bot drawing from', source);
+    r = resolveDraw(r, playerId, source);
   }
-  return backtrack(0) ? groups : null;
+  
+  const player = r.players.find((p) => p.id === playerId);
+  if (!player) return r0;
+  
+  // Try to lay down phase
+  if (!player.laidDownThisRound && (typeof strategy.phasePriority === 'function' ? strategy.phasePriority() : true)) {
+    const phase = PHASES[player.phaseIndex];
+    const layout = attemptAutoLayout(player.hand, phase.reqs);
+    if (layout) {
+      console.log('🤖 Bot laying down phase');
+      r = resolveLayDown(r, playerId, layout);
+    }
+  }
+  
+  // Try to hit cards
+  const updatedPlayer = r.players.find((p) => p.id === playerId);
+  if (updatedPlayer && updatedPlayer.laidDownThisRound) {
+    let guard = 0;
+    let progress = true;
+    while (progress && guard < 25) {
+      guard++;
+      progress = false;
+      const p2 = r.players.find((p) => p.id === playerId);
+      if (!p2 || !p2.laidDownThisRound) break;
+      for (const card of p2.hand) {
+        for (const ownerId of Object.keys(r.table || {})) {
+          const groupsArr = r.table[ownerId];
+          if (!groupsArr) continue;
+          for (let gi = 0; gi < groupsArr.length; gi++) {
+            if (canHit(card, groupsArr[gi])) {
+              r = resolveHit(r, playerId, card.id, ownerId, gi);
+              progress = true;
+              break;
+            }
+          }
+          if (progress) break;
+        }
+        if (progress) break;
+      }
+    }
+  }
+  
+  // Discard
+  const pFinal = r.players.find((p) => p.id === playerId);
+  if (pFinal && pFinal.hand.length > 0) {
+    const phase = PHASES[pFinal.phaseIndex];
+    let target;
+    if (typeof strategy.discardStrategy === 'function') {
+      target = strategy.discardStrategy(pFinal.hand, phase);
+    } else {
+      const sorted = [...pFinal.hand].sort((a, b) => cardScore(b) - cardScore(a));
+      target = sorted[0];
+    }
+    if (target) {
+      console.log('🤖 Bot discarding card');
+      r = resolveDiscard(r, playerId, target.id);
+    }
+  }
+  
+  console.log('🤖 Bot turn complete');
+  return r;
+}
+
+function getPhaseCards(hand, phase) {
+  if (!phase) return [];
+  const used = new Set();
+  const result = [];
+  phase.reqs.forEach(req => {
+    const combos = getCombinations(hand, req.count);
+    for (const combo of combos) {
+      if (validateGroup(combo, req) && !combo.some(c => used.has(c.id))) {
+        combo.forEach(c => used.add(c.id));
+        result.push(...combo);
+        break;
+      }
+    }
+  });
+  return result;
 }
 
 /* ---------- turn-resolution engine ---------- */
@@ -587,6 +839,63 @@ function resolveLayDown(r, playerId, activeGroups) {
     cards: activeGroups[i],
   }));
   AudioManager.playPhaseCompleteSound();
+  
+  // Check if player has no cards left after laying down
+  if (pl.hand.length === 0) {
+    AudioManager.playWinSound();
+    const results = players.map((p) => {
+      if (p.id === playerId) {
+        return { ...p, phaseIndex: p.laidDownThisRound ? Math.min(p.phaseIndex + 1, 10) : p.phaseIndex };
+      }
+      const roundScore = p.hand.reduce((s, c) => s + cardScore(c), 0);
+      return { ...p, score: p.score + roundScore, phaseIndex: p.laidDownThisRound ? Math.min(p.phaseIndex + 1, 10) : p.phaseIndex };
+    });
+    
+    const finished = results.some((p) => p.phaseIndex >= 10);
+    let log = [...r.log, `${pl.name} laid down Phase ${phase.id}!`];
+    
+    if (finished) {
+      const winner = results.slice().sort((a, b) => a.score - b.score)[0];
+      log.push(`🏆 ${winner.name} WINS THE GAME! 🏆`);
+      AudioManager.playWinSound();
+      AudioManager.stopBackgroundMusic();
+      return { 
+        ...r, 
+        players: results.map((p) => ({ ...p, laidDownThisRound: false })), 
+        table, 
+        status: "gameOver", 
+        winnerId: winner.id, 
+        log,
+        hasDrawn: false,
+        chatMessages: r.chatMessages || [],
+      };
+    }
+    
+    const deck = makeDeck();
+    const dealt = results.map((p) => ({ ...p, hand: [], laidDownThisRound: false }));
+    for (let i = 0; i < 10; i++) for (const p of dealt) p.hand.push(deck.pop());
+    const newDiscard = [deck.pop()];
+    AudioManager.playDealSound();
+    log.push(`${pl.name} WON ROUND ${r.round}!`);
+    log.push(`Round ${r.round} complete — dealing round ${r.round + 1}.`);
+    
+    return {
+      ...r,
+      players: dealt,
+      deck,
+      discard: newDiscard,
+      table: {},
+      round: r.round + 1,
+      currentPlayerIndex: (r.currentPlayerIndex + 1) % r.players.length,
+      turnState: "draw",
+      turnStartedAt: Date.now(),
+      log,
+      hasDrawn: false,
+      chatMessages: r.chatMessages || [],
+      roundWinner: pl.name,
+    };
+  }
+  
   return { ...r, players, table, log: [...r.log, `${pl.name} laid down Phase ${phase.id}!`] };
 }
 
@@ -633,18 +942,16 @@ function resolveDiscard(r, playerId, cardId) {
         status: "gameOver", 
         winnerId: winner.id, 
         log,
-        table: {},
         hasDrawn: false,
+        chatMessages: r.chatMessages || [],
       };
     }
     const deck = makeDeck();
     const dealt = results.map((p) => ({ ...p, hand: [], laidDownThisRound: false }));
     for (let i = 0; i < 10; i++) for (const p of dealt) p.hand.push(deck.pop());
     const newDiscard = [deck.pop()];
-    
-    // ROUND WINNER CELEBRATION
-    const roundWinner = player;
-    log.push(`🎉🎊 ${roundWinner.name} WON ROUND ${r.round}! 🎊🎉`);
+    AudioManager.playDealSound();
+    log.push(`${player.name} WON ROUND ${r.round}!`);
     log.push(`Round ${r.round} complete — dealing round ${r.round + 1}.`);
     
     return {
@@ -659,7 +966,8 @@ function resolveDiscard(r, playerId, cardId) {
       turnStartedAt: Date.now(),
       log,
       hasDrawn: false,
-      roundWinner: roundWinner.name,
+      chatMessages: r.chatMessages || [],
+      roundWinner: player.name,
     };
   }
 
@@ -684,36 +992,8 @@ function resolveDiscard(r, playerId, cardId) {
     turnStartedAt: Date.now(), 
     log,
     hasDrawn: false,
+    chatMessages: r.chatMessages || [],
   };
-}
-
-/* ---------- BOT PLAY TURN ---------- */
-function botPlayTurn(r0, playerId) {
-  console.log('🤖 Bot turn started for:', playerId);
-  let r = r0;
-  if (r.turnState === "draw") {
-    console.log('🤖 Bot drawing from deck');
-    r = resolveDraw(r, playerId, "deck");
-  }
-  const player = r.players.find((p) => p.id === playerId);
-  if (player && !player.laidDownThisRound) {
-    const phase = PHASES[player.phaseIndex];
-    const layout = attemptAutoLayout(player.hand, phase.reqs);
-    if (layout) {
-      console.log('🤖 Bot laying down phase');
-      r = resolveLayDown(r, playerId, layout);
-    }
-  }
-  const updatedPlayer = r.players.find((p) => p.id === playerId);
-  if (updatedPlayer && updatedPlayer.hand.length > 0) {
-    const nonWild = updatedPlayer.hand.filter((c) => c.kind !== "wild");
-    const pool = nonWild.length ? nonWild : updatedPlayer.hand;
-    const target = pool.slice().sort((a, b) => cardScore(b) - cardScore(a))[0];
-    console.log('🤖 Bot discarding card');
-    r = resolveDiscard(r, playerId, target.id);
-  }
-  console.log('🤖 Bot turn complete');
-  return r;
 }
 
 /* ---------- storage helpers ---------- */
@@ -733,7 +1013,7 @@ async function saveRoom(room) {
 
 /* ---------- card visual - Compact ---------- */
 const CardFace = React.forwardRef(function CardFace(
-  { card, size = "md", selected, onClick, faceDown, dim, draggable, onPointerDownDrag, glowing, bouncing },
+  { card, size = "md", selected, onClick, faceDown, dim, draggable, onPointerDownDrag, glowing, bouncing, dealAnimation },
   ref
 ) {
   const dims = size === "sm" ? { w: 32, h: 46, fs: 11 } : 
@@ -753,7 +1033,7 @@ const CardFace = React.forwardRef(function CardFace(
           boxShadow: glowing ? "0 0 20px rgba(232,184,75,0.5), 0 0 40px rgba(232,184,75,0.2)" : "0 2px 4px rgba(0,0,0,0.4)",
           cursor: onClick ? "pointer" : "default",
           flexShrink: 0,
-          animation: bouncing ? 'bounce 1s ease-in-out infinite' : 'none',
+          animation: bouncing ? 'bounce 1s ease-in-out infinite' : dealAnimation ? 'dealCard 0.5s ease-out' : 'none',
         }}
       />
     );
@@ -787,7 +1067,7 @@ const CardFace = React.forwardRef(function CardFace(
         flexShrink: 0,
         touchAction: draggable ? "none" : "auto",
         userSelect: "none",
-        animation: bouncing ? 'bounce 1s ease-in-out infinite' : 'none',
+        animation: bouncing ? 'bounce 1s ease-in-out infinite' : dealAnimation ? 'dealCard 0.5s ease-out' : 'none',
         transition: 'box-shadow 0.3s ease, transform 0.3s ease',
         transform: glowing ? 'scale(1.05)' : 'scale(1)',
       }}
@@ -809,11 +1089,18 @@ export default function Phase10App() {
   const [busy, setBusy] = useState(false);
   const [groups, setGroups] = useState([[], []]);
   const [botCount, setBotCount] = useState(2);
+  const [botDifficulty, setBotDifficulty] = useState("medium");
   const [nowTick, setNowTick] = useState(Date.now());
   const [drag, setDrag] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [celebration, setCelebration] = useState(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [hints, setHints] = useState([]);
+  const [showHints, setShowHints] = useState(false);
+  const [undoStack, setUndoStack] = useState([]);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [showChat, setShowChat] = useState(false);
+  const [dealAnimation, setDealAnimation] = useState(false);
   const lastLogRef = useRef([]);
   const pollRef = useRef(null);
   const codeRef = useRef(null);
@@ -831,6 +1118,9 @@ export default function Phase10App() {
       (updatedRoom) => {
         console.log('Received room update from Supabase');
         setRoom(updatedRoom);
+        if (updatedRoom.chatMessages) {
+          setChatMessages(updatedRoom.chatMessages);
+        }
       }
     );
     return () => {
@@ -870,6 +1160,15 @@ export default function Phase10App() {
     };
   }, [room?.status, room?.isSolo, isMuted]);
 
+  // Deal animation when round starts
+  useEffect(() => {
+    if (room?.status === "playing" && room?.turnState === "draw") {
+      setDealAnimation(true);
+      AudioManager.playDealSound();
+      setTimeout(() => setDealAnimation(false), 1000);
+    }
+  }, [room?.round, room?.status]);
+
   useEffect(() => {
     (async () => {
       try {
@@ -884,6 +1183,7 @@ export default function Phase10App() {
               setName(saved.name || "");
               codeRef.current = saved.code;
               setScreen(r.status === "playing" || r.status === "gameOver" ? "game" : "lobby");
+              if (r.chatMessages) setChatMessages(r.chatMessages);
               startPolling(saved.code);
             }
           }
@@ -899,7 +1199,10 @@ export default function Phase10App() {
     codeRef.current = code;
     pollRef.current = setInterval(async () => {
       const r = await loadRoom(code);
-      if (r) setRoom(r);
+      if (r) {
+        setRoom(r);
+        if (r.chatMessages) setChatMessages(r.chatMessages);
+      }
     }, 1500);
   }, []);
 
@@ -941,6 +1244,8 @@ export default function Phase10App() {
       winnerId: null,
       hasDrawn: false,
       roundWinner: null,
+      chatMessages: [],
+      difficulty: "medium",
     };
     await saveRoom(newRoom);
     setRoom(newRoom);
@@ -964,6 +1269,7 @@ export default function Phase10App() {
     const pid = uid("p");
     r.players.push({ id: pid, name: name.trim(), phaseIndex: 0, hand: [], laidDownThisRound: false, score: 0 });
     r.log.push(`${name.trim()} joined.`);
+    r.chatMessages = r.chatMessages || [];
     await saveRoom(r);
     setRoom(r);
     setMyId(pid);
@@ -1006,6 +1312,8 @@ export default function Phase10App() {
       log: [...room.log, "Game started! Dealing 10 cards to each player."],
       hasDrawn: false,
       roundWinner: null,
+      chatMessages: room.chatMessages || [],
+      difficulty: room.difficulty || "medium",
     };
     await saveRoom(updated);
     setRoom(updated);
@@ -1059,6 +1367,8 @@ export default function Phase10App() {
       winnerId: null,
       hasDrawn: false,
       roundWinner: null,
+      chatMessages: [],
+      difficulty: botDifficulty,
     };
     setRoom(soloRoom);
     setMyId("you");
@@ -1086,7 +1396,7 @@ export default function Phase10App() {
   const phase = me ? PHASES[Math.min(me.phaseIndex, 9)] : null;
   const hasDrawn = room?.hasDrawn || false;
 
-  // Celebration detection - ROUND WINNER FIXED
+  // Celebration detection
   useEffect(() => {
     if (!room || !room.log) return;
     const logs = room.log;
@@ -1094,6 +1404,7 @@ export default function Phase10App() {
     
     if (lastLog && lastLogRef.current !== lastLog) {
       lastLogRef.current = lastLog;
+      console.log('📝 New log detected:', lastLog);
       
       // Check for phase completion
       if (lastLog.includes('laid down Phase')) {
@@ -1109,15 +1420,29 @@ export default function Phase10App() {
         }
       }
       
-      // Check for round winner - FIXED
+      // Check for round winner
       if (lastLog.includes('WON ROUND')) {
-        const winnerMatch = lastLog.match(/🎉🎊 (.+?) WON ROUND/);
-        if (winnerMatch) {
-          const winnerName = winnerMatch[1];
-          const roundMatch = lastLog.match(/ROUND (\d+)/);
-          const roundNum = roundMatch ? roundMatch[1] : '';
+        console.log('🎯 Round winner detected!');
+        const parts = lastLog.split(' ');
+        let winnerName = null;
+        let roundNum = null;
+        
+        for (let i = 0; i < parts.length; i++) {
+          if (parts[i].toUpperCase() === 'WON' && parts[i+1] && parts[i+1].toUpperCase() === 'ROUND') {
+            if (i > 0) {
+              winnerName = parts[i-1];
+            }
+            if (i+2 < parts.length) {
+              roundNum = parts[i+2].replace(/[!.]/g, '');
+            }
+            break;
+          }
+        }
+        
+        if (winnerName) {
+          console.log('🏆 Winner found:', winnerName);
           setCelebration({
-            message: `🎉 ${winnerName} WON ROUND ${roundNum}! 🎉`,
+            message: `🎉 ${winnerName} WON ROUND ${roundNum || '?'}! 🎉`,
             type: 'round'
           });
           AudioManager.playPhaseCompleteSound();
@@ -1127,9 +1452,17 @@ export default function Phase10App() {
       
       // Check for game winner
       if (lastLog.includes('WINS THE GAME')) {
-        const winnerMatch = lastLog.match(/🏆 (.+?) WINS THE GAME/);
-        if (winnerMatch) {
-          const winnerName = winnerMatch[1];
+        const parts = lastLog.split(' ');
+        let winnerName = null;
+        for (let i = 0; i < parts.length; i++) {
+          if (parts[i].toUpperCase() === 'WINS' && parts[i+1] && parts[i+1].toUpperCase() === 'THE' && parts[i+2] && parts[i+2].toUpperCase() === 'GAME') {
+            if (i > 0) {
+              winnerName = parts[i-1];
+            }
+            break;
+          }
+        }
+        if (winnerName) {
           setCelebration({
             message: `🏆 ${winnerName} WINS THE GAME! 🏆`,
             type: 'win'
@@ -1144,6 +1477,8 @@ export default function Phase10App() {
 
   function drawFrom(source) {
     if (!isMyTurn || room?.turnState !== "draw") return;
+    // Save undo state
+    setUndoStack([...undoStack, { groups: groups.map(g => [...g]) }]);
     updateRoom((r) => resolveDraw(r, myId, source));
   }
 
@@ -1171,12 +1506,18 @@ export default function Phase10App() {
       setTimeout(() => setError(""), 2000);
       return;
     }
+    // Save undo state
+    setUndoStack([...undoStack, { groups: groups.map(g => [...g]) }]);
     updateRoom((r) => resolveLayDown(r, myId, activeGroups));
     setGroups([[], []]);
     setError("");
+    setHints([]);
+    setShowHints(false);
   }
 
   function hitCard(cardId, ownerId, groupIdx) {
+    // Save undo state
+    setUndoStack([...undoStack, { groups: groups.map(g => [...g]) }]);
     updateRoom((r) => resolveHit(r, myId, cardId, ownerId, groupIdx));
   }
 
@@ -1191,8 +1532,12 @@ export default function Phase10App() {
       setTimeout(() => setError(""), 2000);
       return;
     }
+    // Save undo state
+    setUndoStack([...undoStack, { groups: groups.map(g => [...g]) }]);
     updateRoom((r) => resolveDiscard(r, myId, cardId));
     setError("");
+    setHints([]);
+    setShowHints(false);
   }
 
   function autoEndTurn() {
@@ -1207,10 +1552,60 @@ export default function Phase10App() {
       return resolveDiscard(rr, myId, target.id);
     });
     setError("⏰ Time's up — a card was auto-discarded for you.");
+    setGroups([[], []]);
+    setHints([]);
+    setShowHints(false);
   }
 
   function clearAllGroups() {
+    setUndoStack([...undoStack, { groups: groups.map(g => [...g]) }]);
     setGroups([[], []]);
+    setHints([]);
+    setShowHints(false);
+  }
+
+  function undoLastMove() {
+    if (undoStack.length === 0) {
+      setError("⚠️ Nothing to undo!");
+      setTimeout(() => setError(""), 2000);
+      return;
+    }
+    const lastState = undoStack[undoStack.length - 1];
+    setGroups(lastState.groups);
+    setUndoStack(undoStack.slice(0, -1));
+    setError("↩️ Undo successful!");
+    setTimeout(() => setError(""), 1500);
+  }
+
+  function getHintsForHand() {
+    if (!me || !phase) {
+      setError("⚠️ No hints available!");
+      setTimeout(() => setError(""), 2000);
+      return;
+    }
+    const hintResults = getHints(me.hand, phase);
+    if (hintResults.length === 0) {
+      setHints([{ message: "No possible moves found. Try drawing more cards!" }]);
+    } else {
+      setHints(hintResults);
+    }
+    setShowHints(true);
+    setTimeout(() => setShowHints(false), 5000);
+  }
+
+  function sendChatMessage(text) {
+    if (!room || !me) return;
+    const newMsg = {
+      playerId: myId,
+      playerName: me.name,
+      text: text,
+      timestamp: Date.now(),
+    };
+    const updatedMessages = [...(room.chatMessages || []), newMsg];
+    setChatMessages(updatedMessages);
+    updateRoom((r) => {
+      return { ...r, chatMessages: updatedMessages };
+    });
   }
 
   /* ---- bot turn driver (solo mode) ---- */
@@ -1220,19 +1615,20 @@ export default function Phase10App() {
     const current = room.players[room.currentPlayerIndex];
     if (current && current.isBot) {
       console.log('🤖 Bot turn detected for:', current.name);
+      const difficulty = room.difficulty || "medium";
       const t = setTimeout(() => {
         setRoom((prev) => {
           if (!prev || prev.status !== "playing") return prev;
           const cur = prev.players[prev.currentPlayerIndex];
           if (!cur || !cur.isBot) return prev;
-          console.log('🤖 Executing bot turn for:', cur.name);
-          return botPlayTurn(prev, cur.id);
+          console.log('🤖 Executing bot turn for:', cur.name, 'Difficulty:', difficulty);
+          return botPlayTurn(prev, cur.id, difficulty);
         });
       }, 900);
       return () => clearTimeout(t);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [room?.currentPlayerIndex, room?.round, room?.status, room?.isSolo, room?.players]);
+  }, [room?.currentPlayerIndex, room?.round, room?.status, room?.isSolo, room?.players, room?.difficulty]);
 
   /* ---- 40s turn timer ---- */
 
@@ -1360,6 +1756,10 @@ export default function Phase10App() {
             0%, 100% { transform: translateY(0px); }
             50% { transform: translateY(-6px); }
           }
+          @keyframes dealCard {
+            0% { transform: translateY(-50px) rotate(-10deg); opacity: 0; }
+            100% { transform: translateY(0px) rotate(0deg); opacity: 1; }
+          }
         `}</style>
         <div style={{ maxWidth: 360, margin: "20px auto", textAlign: "center" }}>
           <div style={{ fontSize: 36, fontWeight: 800, letterSpacing: 1, marginBottom: 2 }}>♫ OH UNNI</div>
@@ -1426,6 +1826,29 @@ export default function Phase10App() {
           <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 16 }}>
             vs: {BOT_NAMES.slice(0, botCount).join(", ")}
           </div>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 6 }}>🤖 Bot Difficulty</div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+              {["easy", "medium", "hard"].map((diff) => (
+                <button
+                  key={diff}
+                  onClick={() => setBotDifficulty(diff)}
+                  style={{
+                    padding: "4px 16px",
+                    borderRadius: "6px",
+                    border: botDifficulty === diff ? "2px solid #E8B84B" : "1px solid rgba(244,233,201,0.2)",
+                    background: botDifficulty === diff ? "rgba(232,184,75,0.2)" : "transparent",
+                    color: "#F4E9C9",
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {diff}
+                </button>
+              ))}
+            </div>
+          </div>
           <button onClick={startSoloGame} style={{ width: "100%", padding: "11px", borderRadius: 8, border: "none", background: "#E8B84B", color: "#1B4332", fontWeight: 700, fontSize: 14, cursor: "pointer", marginBottom: 10 }}>
             🎮 Start Game
           </button>
@@ -1484,6 +1907,43 @@ export default function Phase10App() {
           />
         )}
         {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+        {showHints && hints.length > 0 && (
+          <div style={{
+            position: 'fixed',
+            bottom: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(0,0,0,0.9)',
+            padding: '12px 20px',
+            borderRadius: '10px',
+            zIndex: 9999,
+            maxWidth: '400px',
+            border: '2px solid #E8B84B',
+            textAlign: 'center',
+          }}>
+            <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#E8B84B', marginBottom: '4px' }}>💡 Hints</div>
+            {hints.map((hint, i) => (
+              <div key={i} style={{ fontSize: '12px', opacity: 0.9, padding: '2px 0' }}>
+                {hint.message}
+              </div>
+            ))}
+            <button
+              onClick={() => setShowHints(false)}
+              style={{
+                marginTop: '6px',
+                padding: '2px 12px',
+                borderRadius: '4px',
+                border: 'none',
+                background: '#E8B84B',
+                color: '#1B4332',
+                fontSize: '11px',
+                cursor: 'pointer',
+              }}
+            >
+              Close
+            </button>
+          </div>
+        )}
         <div style={bgStyle}>
           {dragGhost}
           <div style={{ maxWidth: 650, margin: "0 auto" }}>
@@ -1494,9 +1954,17 @@ export default function Phase10App() {
                 <span style={{ fontWeight: 800, fontSize: "16px" }}>OH UNNI</span>
                 <span style={{ fontSize: "11px", opacity: 0.6 }}>· round {room.round}</span>
                 {room.isSolo && <span style={{ fontSize: "10px", opacity: 0.5, background: "rgba(0,0,0,0.2)", padding: "1px 8px", borderRadius: "10px" }}>solo</span>}
+                {room.isSolo && (
+                  <span style={{ fontSize: "9px", opacity: 0.5, background: "rgba(232,184,75,0.2)", padding: "1px 8px", borderRadius: "10px", color: "#E8B84B" }}>
+                    {room.difficulty || "medium"}
+                  </span>
+                )}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                 <button onClick={() => setShowHelp(true)} style={{ background: "none", border: "1px solid rgba(244,233,201,0.2)", color: "#F4E9C9", borderRadius: "5px", padding: "2px 8px", fontSize: "14px", cursor: "pointer" }}>❓</button>
+                <button onClick={undoLastMove} style={{ background: "none", border: "1px solid rgba(244,233,201,0.2)", color: "#F4E9C9", borderRadius: "5px", padding: "2px 8px", fontSize: "14px", cursor: "pointer" }} title="Undo last move">↩️</button>
+                <button onClick={getHintsForHand} style={{ background: "none", border: "1px solid rgba(244,233,201,0.2)", color: "#F4E9C9", borderRadius: "5px", padding: "2px 8px", fontSize: "14px", cursor: "pointer" }} title="Get hints">💡</button>
+                <button onClick={() => setShowChat(!showChat)} style={{ background: "none", border: "1px solid rgba(244,233,201,0.2)", color: "#F4E9C9", borderRadius: "5px", padding: "2px 8px", fontSize: "14px", cursor: "pointer" }}>💬</button>
                 {room.status === "playing" && (
                   <div style={{ display: "flex", alignItems: "center", gap: "4px", background: "rgba(0,0,0,0.25)", borderRadius: "12px", padding: "2px 10px" }}>
                     <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: timerColor }} />
@@ -1509,6 +1977,15 @@ export default function Phase10App() {
                 <button onClick={leaveRoom} style={{ background: "none", border: "1px solid rgba(244,233,201,0.2)", color: "#F4E9C9", borderRadius: "5px", padding: "2px 8px", fontSize: "10px", cursor: "pointer" }}>Leave</button>
               </div>
             </div>
+
+            {/* Chat */}
+            {showChat && (
+              <Chat 
+                messages={chatMessages} 
+                onSendMessage={sendChatMessage} 
+                currentPlayer={me} 
+              />
+            )}
 
             {/* Game Over Banner */}
             {room.status === "gameOver" && (
@@ -1561,6 +2038,7 @@ export default function Phase10App() {
                   size="sm" 
                   glowing={isMyTurnGlow}
                   bouncing={isMyTurnGlow}
+                  dealAnimation={dealAnimation}
                   onClick={isMyTurn && room.turnState === "draw" ? () => drawFrom("deck") : undefined} 
                 />
               </div>
@@ -1574,6 +2052,7 @@ export default function Phase10App() {
                   size="sm" 
                   glowing={isMyTurnGlow}
                   bouncing={isMyTurnGlow}
+                  dealAnimation={dealAnimation}
                   onClick={isMyTurn && room.turnState === "draw" ? () => drawFrom("discard") : undefined} 
                 />
               </div>
@@ -1626,7 +2105,7 @@ export default function Phase10App() {
                               boxShadow: canHitHere ? "0 0 15px rgba(232,184,75,0.15)" : "none",
                             }}
                           >
-                            {g.cards.map((c) => <CardFace key={c.id} card={c} size="sm" />)}
+                            {g.cards.map((c) => <CardFace key={c.id} card={c} size="sm" dealAnimation={dealAnimation} />)}
                           </div>
                         ))}
                       </div>
@@ -1650,6 +2129,7 @@ export default function Phase10App() {
                   <span>🎯 Build Phase {phase.id}</span>
                   <span style={{ fontSize: "9px" }}>
                     {hasDrawn ? "🃏 Drawn - Ready!" : "⏳ Draw first!"}
+                    {undoStack.length > 0 && <span style={{ marginLeft: "6px", color: "#E8B84B" }}>↩️ {undoStack.length}</span>}
                   </span>
                 </div>
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
@@ -1669,13 +2149,13 @@ export default function Phase10App() {
                       <div style={{ display: "flex", gap: "2px", flexWrap: "wrap", minHeight: "30px" }}>
                         {(groups[i] || []).length === 0 && <div style={{ fontSize: "9px", opacity: 0.3, alignSelf: "center" }}>⬇️ drop</div>}
                         {(groups[i] || []).map((c) => (
-                          <CardFace key={c.id} card={c} size="sm" draggable onPointerDownDrag={(e) => beginDrag(e, c)} />
+                          <CardFace key={c.id} card={c} size="sm" draggable onPointerDownDrag={(e) => beginDrag(e, c)} dealAnimation={dealAnimation} />
                         ))}
                       </div>
                     </div>
                   ))}
                 </div>
-                <div style={{ display: "flex", gap: "6px", marginTop: "6px", alignItems: "center" }}>
+                <div style={{ display: "flex", gap: "6px", marginTop: "6px", alignItems: "center", flexWrap: "wrap" }}>
                   <button 
                     onClick={layDownPhase} 
                     disabled={!isMyTurn || !hasDrawn || me?.laidDownThisRound}
@@ -1761,6 +2241,7 @@ export default function Phase10App() {
                       draggable={true}
                       glowing={isMyTurnGlow}
                       bouncing={isMyTurnGlow}
+                      dealAnimation={dealAnimation}
                       onPointerDownDrag={(e) => beginDrag(e, c)}
                     />
                   ))}
