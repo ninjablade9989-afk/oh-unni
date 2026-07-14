@@ -1,6 +1,7 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "Oh Unni",
+  "name": "Oh Unni Card Game",
+  "description": "Play Oh Unni with friends online or vs computer",
   "icons": [
     {
       "src": "favicon.ico",
@@ -20,6 +21,7 @@
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "theme_color": "#1F5C42",
+  "background_color": "#0A2A20",
+  "orientation": "portrait"
 }

@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { subscribeToRoom } from './supabase';
 
 /* ---------------------------------------------------------------
-   PHASE 10 — Play With Friends / Solo vs Computer
-   With Sound Effects, Music, and Celebrations!
+   OH UNNI - Compact UI Design (Mattel Inspired)
+   Clean, organized layout with minimal scrolling
 --------------------------------------------------------------- */
 
 // Audio Manager
@@ -178,14 +178,14 @@ function Celebration({ message, onClose, type }) {
           : type === 'round'
           ? 'linear-gradient(135deg, #4ECDC4, #45B7D1, #4ECDC4)'
           : 'linear-gradient(135deg, #E8B84B, #FF6B6B, #4ECDC4)',
-        padding: '40px 60px',
+        padding: '30px 50px',
         borderRadius: '20px',
         boxShadow: '0 20px 60px rgba(0,0,0,0.8)',
         textAlign: 'center',
-        maxWidth: '500px',
+        maxWidth: '450px',
         pointerEvents: 'auto',
       }}>
-        <div style={{ fontSize: '60px', marginBottom: '10px' }}>
+        <div style={{ fontSize: '50px', marginBottom: '10px' }}>
           {emojis.map((emoji, i) => (
             <span key={i} style={{ 
               display: 'inline-block',
@@ -197,7 +197,7 @@ function Celebration({ message, onClose, type }) {
           ))}
         </div>
         <div style={{ 
-          fontSize: '28px', 
+          fontSize: '24px', 
           fontWeight: 'bold', 
           color: 'white', 
           textShadow: '2px 2px 4px rgba(0,0,0,0.3)',
@@ -205,14 +205,14 @@ function Celebration({ message, onClose, type }) {
         }}>
           {message}
         </div>
-        <div style={{ fontSize: '16px', color: 'white', marginTop: '10px', opacity: 0.9 }}>
+        <div style={{ fontSize: '14px', color: 'white', marginTop: '10px', opacity: 0.9 }}>
           {type === 'win' ? '🏆 CHAMPION! 🏆' : type === 'round' ? '🎯 Ready for next round! 🎯' : '✨ Amazing! ✨'}
         </div>
         <button
           onClick={onClose}
           style={{
-            marginTop: '20px',
-            padding: '10px 30px',
+            marginTop: '15px',
+            padding: '8px 25px',
             borderRadius: '10px',
             border: 'none',
             background: 'white',
@@ -220,10 +220,10 @@ function Celebration({ message, onClose, type }) {
             fontWeight: 'bold',
             cursor: 'pointer',
             pointerEvents: 'auto',
-            fontSize: '16px',
+            fontSize: '14px',
           }}
         >
-          {type === 'win' ? '🏆 Continue' : '🎮 Continue'}
+          Continue
         </button>
       </div>
       <style>{`
@@ -234,7 +234,7 @@ function Celebration({ message, onClose, type }) {
         }
         @keyframes float {
           0%, 100% { transform: translateY(0px) rotate(0deg); }
-          50% { transform: translateY(-20px) rotate(5deg); }
+          50% { transform: translateY(-15px) rotate(5deg); }
         }
       `}</style>
     </div>
@@ -436,9 +436,7 @@ function resolveDraw(r, playerId, source) {
     card = discard.pop();
   }
   player.hand = [...player.hand, card];
-  
   AudioManager.playDrawSound();
-  
   return { ...r, players, deck, discard, turnState: "action" };
 }
 
@@ -459,9 +457,7 @@ function resolveLayDown(r, playerId, activeGroups) {
     label: `${req.type === "set" ? "Set" : req.type === "run" ? "Run" : "Color"} of ${req.count}`,
     cards: activeGroups[i],
   }));
-  
   AudioManager.playPhaseCompleteSound();
-  
   return { ...r, players, table, log: [...r.log, `${pl.name} laid down Phase ${phase.id}!`] };
 }
 
@@ -487,7 +483,6 @@ function resolveDiscard(r, playerId, cardId) {
   player.hand = player.hand.filter((c) => c.id !== cardId);
   const discard = [...r.discard, card];
   let log = [...r.log, `${player.name} discarded.`];
-  
   AudioManager.playDiscardSound();
 
   if (player.hand.length === 0) {
@@ -500,10 +495,8 @@ function resolveDiscard(r, playerId, cardId) {
     if (finished) {
       const winner = results.slice().sort((a, b) => a.score - b.score)[0];
       log.push(`Round ${r.round} complete. ${winner.name} wins the game with the lowest score!`);
-      
       AudioManager.playWinSound();
       AudioManager.stopBackgroundMusic();
-      
       return { ...r, players: results.map((p) => ({ ...p, laidDownThisRound: false })), discard, status: "gameOver", winnerId: winner.id, log };
     }
     const deck = makeDeck();
@@ -542,12 +535,10 @@ function resolveDiscard(r, playerId, cardId) {
 function botPlayTurn(r0, playerId) {
   console.log('🤖 Bot turn started for:', playerId);
   let r = r0;
-  
   if (r.turnState === "draw") {
     console.log('🤖 Bot drawing from deck');
     r = resolveDraw(r, playerId, "deck");
   }
-  
   const player = r.players.find((p) => p.id === playerId);
   if (player && !player.laidDownThisRound) {
     const phase = PHASES[player.phaseIndex];
@@ -557,7 +548,6 @@ function botPlayTurn(r0, playerId) {
       r = resolveLayDown(r, playerId, layout);
     }
   }
-  
   const updatedPlayer = r.players.find((p) => p.id === playerId);
   if (updatedPlayer && updatedPlayer.hand.length > 0) {
     const nonWild = updatedPlayer.hand.filter((c) => c.kind !== "wild");
@@ -566,7 +556,6 @@ function botPlayTurn(r0, playerId) {
     console.log('🤖 Bot discarding card');
     r = resolveDiscard(r, playerId, target.id);
   }
-  
   console.log('🤖 Bot turn complete');
   return r;
 }
@@ -586,13 +575,16 @@ async function saveRoom(room) {
   await window.storage.set(roomKey(room.code), JSON.stringify(room), true);
 }
 
-/* ---------- card visual ---------- */
-
+/* ---------- card visual - Compact ---------- */
 const CardFace = React.forwardRef(function CardFace(
   { card, size = "md", selected, onClick, faceDown, dim, draggable, onPointerDownDrag },
   ref
 ) {
-  const dims = size === "sm" ? { w: 42, h: 60, fs: 14 } : size === "lg" ? { w: 68, h: 96, fs: 22 } : { w: 54, h: 78, fs: 17 };
+  // Compact card sizes
+  const dims = size === "sm" ? { w: 32, h: 46, fs: 11 } : 
+               size === "lg" ? { w: 55, h: 78, fs: 18 } : 
+               { w: 42, h: 60, fs: 14 };
+  
   if (faceDown) {
     return (
       <div
@@ -600,7 +592,7 @@ const CardFace = React.forwardRef(function CardFace(
         style={{
           width: dims.w,
           height: dims.h,
-          borderRadius: 8,
+          borderRadius: 6,
           background: "repeating-linear-gradient(135deg, #1B4332, #1B4332 6px, #133326 6px, #133326 12px)",
           border: "2px solid #0d2419",
           boxShadow: "0 2px 4px rgba(0,0,0,0.4)",
@@ -621,10 +613,10 @@ const CardFace = React.forwardRef(function CardFace(
       style={{
         width: dims.w,
         height: dims.h,
-        borderRadius: 8,
+        borderRadius: 6,
         background: bg,
-        border: selected ? "3px solid #E8B84B" : "2px solid rgba(0,0,0,0.25)",
-        boxShadow: selected ? "0 0 0 2px #E8B84B, 0 4px 10px rgba(0,0,0,0.35)" : "0 2px 5px rgba(0,0,0,0.3)",
+        border: selected ? "2px solid #E8B84B" : "1px solid rgba(0,0,0,0.25)",
+        boxShadow: selected ? "0 0 0 2px #E8B84B, 0 2px 8px rgba(0,0,0,0.35)" : "0 1px 4px rgba(0,0,0,0.3)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -670,9 +662,7 @@ export default function Phase10App() {
     if (!room || room.isSolo || !codeRef.current) {
       return;
     }
-    
     console.log('Setting up real-time sync for room:', codeRef.current);
-    
     const unsubscribe = subscribeToRoom(
       codeRef.current,
       (updatedRoom) => {
@@ -680,7 +670,6 @@ export default function Phase10App() {
         setRoom(updatedRoom);
       }
     );
-    
     return () => {
       unsubscribe?.();
     };
@@ -699,7 +688,6 @@ export default function Phase10App() {
     } else {
       AudioManager.stopBackgroundMusic();
     }
-    
     return () => {
       AudioManager.stopBackgroundMusic();
     };
@@ -855,7 +843,6 @@ export default function Phase10App() {
       laidDownThisRound: false, 
       score: 0 
     };
-    
     const bots = Array.from({ length: botCount }, (_, i) => ({
       id: `bot${i}`, 
       name: BOT_NAMES[i], 
@@ -865,18 +852,14 @@ export default function Phase10App() {
       laidDownThisRound: false, 
       score: 0
     }));
-    
     const players = [you, ...bots];
     const deck = makeDeck();
-    
     for (let i = 0; i < 10; i++) {
       for (const p of players) {
         p.hand.push(deck.pop());
       }
     }
-    
     const discard = [deck.pop()];
-    
     const soloRoom = {
       code: "SOLO", 
       isSolo: true, 
@@ -894,7 +877,6 @@ export default function Phase10App() {
       log: ["Solo game started — good luck!"], 
       winnerId: null,
     };
-    
     setRoom(soloRoom);
     setMyId("you");
     setScreen("game");
@@ -920,17 +902,13 @@ export default function Phase10App() {
   const isMyTurn = room && (room.status === "playing") && room.players[room.currentPlayerIndex]?.id === myId;
   const phase = me ? PHASES[Math.min(me.phaseIndex, 9)] : null;
 
-  // Celebration detection - DETECTS ROUND WINS, PHASE COMPLETIONS, AND GAME WINS
+  // Celebration detection
   useEffect(() => {
     if (!room || !room.log) return;
-    
     const logs = room.log;
     const lastLog = logs[logs.length - 1];
-    
     if (lastLog && lastLogRef.current !== lastLog) {
       lastLogRef.current = lastLog;
-      
-      // Check for phase completion
       if (lastLog.includes('laid down Phase')) {
         const playerName = lastLog.split(' laid down')[0];
         const isCurrentPlayer = room.isSolo || (me && playerName === me.name);
@@ -943,10 +921,7 @@ export default function Phase10App() {
           setTimeout(() => setCelebration(null), 4000);
         }
       }
-      
-      // Check for round winner (when someone finishes their hand)
       if (lastLog.includes('Round') && lastLog.includes('complete')) {
-        // Find who has 0 cards (they finished their hand)
         const roundWinner = room.players.find(p => p.hand && p.hand.length === 0);
         if (roundWinner) {
           const roundMatch = lastLog.match(/Round (\d+)/);
@@ -959,8 +934,6 @@ export default function Phase10App() {
           setTimeout(() => setCelebration(null), 5000);
         }
       }
-      
-      // Check for game winner
       if (lastLog.includes('wins the game')) {
         const winnerMatch = lastLog.match(/(.+?) wins the game/);
         if (winnerMatch) {
@@ -1021,11 +994,9 @@ export default function Phase10App() {
 
   useEffect(() => {
     if (!room || !room.isSolo || room.status !== "playing") return;
-    
     const current = room.players[room.currentPlayerIndex];
     if (current && current.isBot) {
       console.log('🤖 Bot turn detected for:', current.name);
-      
       const t = setTimeout(() => {
         setRoom((prev) => {
           if (!prev || prev.status !== "playing") return prev;
@@ -1128,86 +1099,81 @@ export default function Phase10App() {
     AudioManager.toggleMute();
   };
 
-  /* ---------------- render ---------------- */
+  /* ---------------- RENDER ---------------- */
 
   const bgStyle = {
-    minHeight: 480,
+    minHeight: "100vh",
     background: "radial-gradient(ellipse at top, #1F5C42 0%, #0F3D2E 55%, #0A2A20 100%)",
     fontFamily: "'Poppins', system-ui, sans-serif",
     color: "#F4E9C9",
-    padding: "20px 16px 32px",
+    padding: "8px 10px",
     boxSizing: "border-box",
-    position: "relative",
   };
 
   const dragGhost = drag && (
-    <div style={{ position: "fixed", left: drag.x - 27, top: drag.y - 39, zIndex: 9999, pointerEvents: "none", transform: "scale(1.08) rotate(-4deg)" }}>
-      <CardFace card={drag.card} />
+    <div style={{ position: "fixed", left: drag.x - 20, top: drag.y - 30, zIndex: 9999, pointerEvents: "none", transform: "scale(1.05) rotate(-3deg)" }}>
+      <CardFace card={drag.card} size="sm" />
     </div>
   );
 
+  /* ---- HOME SCREEN ---- */
   if (screen === "home") {
     return (
       <div style={bgStyle}>
         <style>{`@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap');`}</style>
-        <div style={{ maxWidth: 380, margin: "40px auto", textAlign: "center" }}>
-          <div style={{ fontSize: 40, fontWeight: 800, letterSpacing: 1, marginBottom: 4 }}>♫ Oh Unni</div>
-          <div style={{ opacity: 0.75, marginBottom: 28, fontSize: 14 }}>Friends online, or solo vs computer</div>
-
+        <div style={{ maxWidth: 360, margin: "20px auto", textAlign: "center" }}>
+          <div style={{ fontSize: 36, fontWeight: 800, letterSpacing: 1, marginBottom: 2 }}>♫ OH UNNI</div>
+          <div style={{ opacity: 0.7, marginBottom: 20, fontSize: 13 }}>Friends online, or solo vs computer</div>
           <input
             placeholder="Your name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: "none", marginBottom: 14, fontSize: 15, boxSizing: "border-box", fontFamily: "inherit" }}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "none", marginBottom: 10, fontSize: 14, boxSizing: "border-box", fontFamily: "inherit" }}
           />
-
-          <button onClick={createRoom} disabled={busy} style={{ width: "100%", padding: "13px", borderRadius: 10, border: "none", background: "#E8B84B", color: "#1B4332", fontWeight: 700, fontSize: 15, marginBottom: 10, cursor: "pointer" }}>
-            🎮 Create Room (Play with Friends)
+          <button onClick={createRoom} disabled={busy} style={{ width: "100%", padding: "11px", borderRadius: 8, border: "none", background: "#E8B84B", color: "#1B4332", fontWeight: 700, fontSize: 14, marginBottom: 8, cursor: "pointer" }}>
+            🎮 Create Room
           </button>
-
           <button
             onClick={() => { if (!name.trim()) return setError("Enter your name first."); setError(""); setScreen("soloSetup"); }}
-            style={{ width: "100%", padding: "13px", borderRadius: 10, border: "2px solid #E8B84B", background: "transparent", color: "#E8B84B", fontWeight: 700, fontSize: 15, marginBottom: 18, cursor: "pointer" }}
+            style={{ width: "100%", padding: "11px", borderRadius: 8, border: "2px solid #E8B84B", background: "transparent", color: "#E8B84B", fontWeight: 700, fontSize: 14, marginBottom: 14, cursor: "pointer" }}
           >
             🤖 Solo vs Computer
           </button>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0", opacity: 0.6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "12px 0", opacity: 0.5 }}>
             <div style={{ flex: 1, height: 1, background: "#F4E9C9" }} />
-            <span style={{ fontSize: 12 }}>OR JOIN A ROOM</span>
+            <span style={{ fontSize: 11 }}>OR JOIN</span>
             <div style={{ flex: 1, height: 1, background: "#F4E9C9" }} />
           </div>
-
           <input
             placeholder="Room code"
             value={codeInput}
             onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
             maxLength={4}
-            style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: "none", marginBottom: 10, fontSize: 15, textAlign: "center", letterSpacing: 4, boxSizing: "border-box", fontFamily: "inherit", textTransform: "uppercase" }}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "none", marginBottom: 8, fontSize: 14, textAlign: "center", letterSpacing: 4, boxSizing: "border-box", fontFamily: "inherit", textTransform: "uppercase" }}
           />
-          <button onClick={joinRoom} disabled={busy} style={{ width: "100%", padding: "13px", borderRadius: 10, border: "2px solid #E8B84B", background: "transparent", color: "#E8B84B", fontWeight: 700, fontSize: 15, cursor: "pointer" }}>
+          <button onClick={joinRoom} disabled={busy} style={{ width: "100%", padding: "11px", borderRadius: 8, border: "2px solid #E8B84B", background: "transparent", color: "#E8B84B", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
             🔗 Join Room
           </button>
-
-          {error && <div style={{ marginTop: 16, color: "#F2A5A0", fontSize: 13 }}>{error}</div>}
+          {error && <div style={{ marginTop: 12, color: "#F2A5A0", fontSize: 12 }}>{error}</div>}
         </div>
       </div>
     );
   }
 
+  /* ---- SOLO SETUP ---- */
   if (screen === "soloSetup") {
     return (
       <div style={bgStyle}>
-        <div style={{ maxWidth: 380, margin: "50px auto", textAlign: "center" }}>
-          <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 6 }}>🤖 Solo vs Computer</div>
-          <div style={{ opacity: 0.75, fontSize: 13, marginBottom: 22 }}>How many bots do you want to play against?</div>
-          <div style={{ display: "flex", gap: 10, justifyContent: "center", marginBottom: 26 }}>
+        <div style={{ maxWidth: 360, margin: "30px auto", textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>🤖 Solo vs Computer</div>
+          <div style={{ opacity: 0.7, fontSize: 12, marginBottom: 16 }}>How many bots?</div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "center", marginBottom: 18 }}>
             {[1, 2, 3].map((n) => (
               <button
                 key={n}
                 onClick={() => setBotCount(n)}
                 style={{
-                  width: 60, height: 60, borderRadius: 12, fontSize: 20, fontWeight: 800, cursor: "pointer",
+                  width: 50, height: 50, borderRadius: 10, fontSize: 18, fontWeight: 800, cursor: "pointer",
                   border: botCount === n ? "2px solid #E8B84B" : "2px solid rgba(244,233,201,0.3)",
                   background: botCount === n ? "rgba(232,184,75,0.18)" : "transparent",
                   color: "#F4E9C9",
@@ -1217,13 +1183,13 @@ export default function Phase10App() {
               </button>
             ))}
           </div>
-          <div style={{ fontSize: 12, opacity: 0.6, marginBottom: 24 }}>
-            You'll play against: {BOT_NAMES.slice(0, botCount).join(", ")}
+          <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 16 }}>
+            vs: {BOT_NAMES.slice(0, botCount).join(", ")}
           </div>
-          <button onClick={startSoloGame} style={{ width: "100%", padding: "13px", borderRadius: 10, border: "none", background: "#E8B84B", color: "#1B4332", fontWeight: 700, fontSize: 15, cursor: "pointer", marginBottom: 12 }}>
+          <button onClick={startSoloGame} style={{ width: "100%", padding: "11px", borderRadius: 8, border: "none", background: "#E8B84B", color: "#1B4332", fontWeight: 700, fontSize: 14, cursor: "pointer", marginBottom: 10 }}>
             🎮 Start Game
           </button>
-          <button onClick={() => setScreen("home")} style={{ width: "100%", background: "none", border: "none", color: "#F4E9C9", opacity: 0.6, fontSize: 13, cursor: "pointer" }}>
+          <button onClick={() => setScreen("home")} style={{ width: "100%", background: "none", border: "none", color: "#F4E9C9", opacity: 0.6, fontSize: 12, cursor: "pointer" }}>
             Back
           </button>
         </div>
@@ -1231,35 +1197,37 @@ export default function Phase10App() {
     );
   }
 
+  /* ---- LOBBY ---- */
   if (screen === "lobby" && room) {
     return (
       <div style={bgStyle}>
-        <div style={{ maxWidth: 420, margin: "20px auto" }}>
-          <div style={{ textAlign: "center", marginBottom: 6, fontSize: 13, opacity: 0.7 }}>ROOM CODE</div>
-          <div style={{ textAlign: "center", fontSize: 44, fontWeight: 800, letterSpacing: 6, marginBottom: 20, color: "#E8B84B" }}>{room.code}</div>
-          <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 14, padding: 16, marginBottom: 18 }}>
-            <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 10 }}>PLAYERS ({room.players.length}/6)</div>
+        <div style={{ maxWidth: 380, margin: "20px auto" }}>
+          <div style={{ textAlign: "center", fontSize: 11, opacity: 0.6 }}>ROOM CODE</div>
+          <div style={{ textAlign: "center", fontSize: 40, fontWeight: 800, letterSpacing: 5, marginBottom: 16, color: "#E8B84B" }}>{room.code}</div>
+          <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 10, padding: 14, marginBottom: 14 }}>
+            <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>PLAYERS ({room.players.length}/6)</div>
             {room.players.map((p) => (
-              <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 15 }}>
+              <div key={p.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 14 }}>
                 <span>{p.name} {p.id === room.hostId ? "★" : ""}</span>
-                {p.id === myId && <span style={{ opacity: 0.6, fontSize: 12 }}>you</span>}
+                {p.id === myId && <span style={{ opacity: 0.6, fontSize: 11 }}>you</span>}
               </div>
             ))}
           </div>
           {myId === room.hostId ? (
-            <button onClick={startGame} disabled={busy || room.players.length < 2} style={{ width: "100%", padding: "14px", borderRadius: 10, border: "none", background: room.players.length < 2 ? "#5a5a4a" : "#E8B84B", color: "#1B4332", fontWeight: 700, fontSize: 16, cursor: room.players.length < 2 ? "default" : "pointer" }}>
-              {room.players.length < 2 ? "⏳ Waiting for more players…" : "🚀 Start Game"}
+            <button onClick={startGame} disabled={busy || room.players.length < 2} style={{ width: "100%", padding: "12px", borderRadius: 8, border: "none", background: room.players.length < 2 ? "#5a5a4a" : "#E8B84B", color: "#1B4332", fontWeight: 700, fontSize: 15, cursor: room.players.length < 2 ? "default" : "pointer" }}>
+              {room.players.length < 2 ? "⏳ Waiting…" : "🚀 Start Game"}
             </button>
           ) : (
-            <div style={{ textAlign: "center", opacity: 0.75, fontSize: 14 }}>⏳ Waiting for host to start…</div>
+            <div style={{ textAlign: "center", opacity: 0.7, fontSize: 13 }}>⏳ Waiting for host…</div>
           )}
-          {error && <div style={{ marginTop: 14, color: "#F2A5A0", fontSize: 13, textAlign: "center" }}>{error}</div>}
-          <button onClick={leaveRoom} style={{ marginTop: 22, width: "100%", background: "none", border: "none", color: "#F4E9C9", opacity: 0.5, fontSize: 13, cursor: "pointer" }}>Leave room</button>
+          {error && <div style={{ marginTop: 10, color: "#F2A5A0", fontSize: 12, textAlign: "center" }}>{error}</div>}
+          <button onClick={leaveRoom} style={{ marginTop: 16, width: "100%", background: "none", border: "none", color: "#F4E9C9", opacity: 0.5, fontSize: 12, cursor: "pointer" }}>Leave room</button>
         </div>
       </div>
     );
   }
 
+  /* ---- GAME SCREEN ---- */
   if ((screen === "game" || room?.status === "gameOver") && room) {
     const currentPlayer = room.players[room.currentPlayerIndex];
     const topDiscard = room.discard[room.discard.length - 1];
@@ -1276,104 +1244,119 @@ export default function Phase10App() {
         )}
         <div style={bgStyle}>
           {dragGhost}
-          <div style={{ maxWidth: 720, margin: "0 auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
-              <div style={{ fontWeight: 800, fontSize: 20 }}>
-                ♫ PHASE 10 <span style={{ fontSize: 12, opacity: 0.6, fontWeight: 400 }}>· {room.isSolo ? "solo" : `room ${room.code}`} · round {room.round}</span>
+          <div style={{ maxWidth: 650, margin: "0 auto" }}>
+            
+            {/* Compact Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontWeight: 800, fontSize: "16px" }}>OH UNNI</span>
+                <span style={{ fontSize: "11px", opacity: 0.6 }}>· round {room.round}</span>
+                {room.isSolo && <span style={{ fontSize: "10px", opacity: 0.5, background: "rgba(0,0,0,0.2)", padding: "1px 8px", borderRadius: "10px" }}>solo</span>}
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <button onClick={toggleMute} style={{ background: "none", border: "1px solid rgba(244,233,201,0.4)", color: "#F4E9C9", borderRadius: 8, padding: "5px 10px", fontSize: 16, cursor: "pointer" }}>
-                  {isMuted ? "🔇" : "🔊"}
-                </button>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                 {room.status === "playing" && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(0,0,0,0.25)", borderRadius: 20, padding: "4px 12px" }}>
-                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: timerColor }} />
-                    <span style={{ fontSize: 13, fontWeight: 700, color: timerColor, minWidth: 26 }}>{timeRemaining}s</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px", background: "rgba(0,0,0,0.25)", borderRadius: "12px", padding: "2px 10px" }}>
+                    <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: timerColor }} />
+                    <span style={{ fontSize: "12px", fontWeight: 700, color: timerColor }}>{timeRemaining}s</span>
                   </div>
                 )}
-                <button onClick={leaveRoom} style={{ background: "none", border: "1px solid rgba(244,233,201,0.4)", color: "#F4E9C9", borderRadius: 8, padding: "5px 10px", fontSize: 12, cursor: "pointer" }}>Leave</button>
+                <button onClick={toggleMute} style={{ background: "none", border: "none", color: "#F4E9C9", fontSize: "15px", cursor: "pointer", padding: "2px 4px" }}>
+                  {isMuted ? "🔇" : "🔊"}
+                </button>
+                <button onClick={leaveRoom} style={{ background: "none", border: "1px solid rgba(244,233,201,0.2)", color: "#F4E9C9", borderRadius: "5px", padding: "2px 8px", fontSize: "10px", cursor: "pointer" }}>Leave</button>
               </div>
             </div>
 
+            {/* Game Over Banner */}
             {room.status === "gameOver" && (
-              <div style={{ background: "#E8B84B", color: "#1B4332", borderRadius: 12, padding: 14, marginBottom: 14, textAlign: "center", fontWeight: 700, fontSize: 18 }}>
-                🏆 {room.players.find((p) => p.id === room.winnerId)?.name} wins the game! 🎉
+              <div style={{ background: "#E8B84B", color: "#1B4332", borderRadius: "8px", padding: "8px", marginBottom: "8px", textAlign: "center", fontWeight: 700, fontSize: "14px" }}>
+                🏆 {room.players.find((p) => p.id === room.winnerId)?.name} WINS! 🎉
               </div>
             )}
 
-            <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 8, marginBottom: 12 }}>
-              {room.players.map((p) => (
-                <div key={p.id} style={{
-                  minWidth: 132,
-                  background: p.id === currentPlayer?.id && room.status === "playing" ? "rgba(232,184,75,0.18)" : "rgba(0,0,0,0.22)",
-                  border: p.id === currentPlayer?.id && room.status === "playing" ? "1.5px solid #E8B84B" : "1px solid rgba(244,233,201,0.15)",
-                  borderRadius: 10, padding: "8px 10px", flexShrink: 0,
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#2E6DA8", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                      {p.name[0]}
+            {/* Compact Player Row */}
+            <div style={{ display: "flex", gap: "5px", overflowX: "auto", paddingBottom: "5px", marginBottom: "8px", flexWrap: "nowrap" }}>
+              {room.players.map((p) => {
+                const isActive = p.id === currentPlayer?.id && room.status === "playing";
+                return (
+                  <div key={p.id} style={{
+                    background: isActive ? "rgba(232,184,75,0.15)" : "rgba(0,0,0,0.2)",
+                    border: isActive ? "1px solid #E8B84B" : "1px solid rgba(244,233,201,0.08)",
+                    borderRadius: "6px",
+                    padding: "3px 8px",
+                    fontSize: "10px",
+                    whiteSpace: "nowrap",
+                    minWidth: "60px",
+                    flex: "0 0 auto",
+                  }}>
+                    <div style={{ fontWeight: 700, fontSize: "11px" }}>
+                      {p.name}{p.id === myId ? "" : p.isBot ? " 🤖" : ""}
+                      {p.id === myId && <span style={{ opacity: 0.5, fontSize: "8px", marginLeft: "2px" }}>you</span>}
                     </div>
-                    <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {p.name}{p.id === myId ? " (you)" : p.isBot ? " 🤖" : ""}
+                    <div style={{ opacity: 0.7, fontSize: "9px" }}>
+                      Ph{Math.min(p.phaseIndex + 1, 10)} · {p.hand.length} cards
+                    </div>
+                    <div style={{ display: "flex", gap: "1px", marginTop: "2px" }}>
+                      {Array.from({ length: 10 }).map((_, i) => (
+                        <div key={i} style={{ width: "5px", height: "5px", borderRadius: "1px", background: i < p.phaseIndex ? "#E8B84B" : "rgba(244,233,201,0.15)" }} />
+                      ))}
                     </div>
                   </div>
-                  <div style={{ fontSize: 11, opacity: 0.75, marginTop: 4 }}>Phase {Math.min(p.phaseIndex + 1, 10)} · {p.hand.length} cards · {p.score} pts</div>
-                  <div style={{ display: "flex", gap: 2, marginTop: 5 }}>
-                    {Array.from({ length: 10 }).map((_, i) => (
-                      <div key={i} style={{ width: 8, height: 8, borderRadius: 2, background: i < p.phaseIndex ? "#E8B84B" : "rgba(244,233,201,0.2)" }} />
-                    ))}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 22, background: "rgba(0,0,0,0.18)", borderRadius: 14, padding: "16px 10px", marginBottom: 14 }}>
+            {/* Deck & Discard Row */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "16px", background: "rgba(0,0,0,0.15)", borderRadius: "10px", padding: "8px 12px", marginBottom: "8px" }}>
               <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 6 }}>DECK ({room.deck.length})</div>
-                <CardFace faceDown onClick={isMyTurn && room.turnState === "draw" ? () => drawFrom("deck") : undefined} />
+                <div style={{ fontSize: "8px", opacity: 0.5, marginBottom: "2px" }}>DECK ({room.deck.length})</div>
+                <CardFace faceDown size="sm" onClick={isMyTurn && room.turnState === "draw" ? () => drawFrom("deck") : undefined} />
               </div>
+              <div style={{ fontSize: "18px", opacity: 0.3 }}>→</div>
               <div style={{ textAlign: "center" }} data-dropzone="discard">
-                <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 6 }}>DISCARD {isMyTurn && room.turnState === "action" ? "(drop here)" : ""}</div>
+                <div style={{ fontSize: "8px", opacity: 0.5, marginBottom: "2px" }}>DISCARD</div>
                 {topDiscard ? (
-                  <CardFace card={topDiscard} onClick={isMyTurn && room.turnState === "draw" ? () => drawFrom("discard") : undefined} />
+                  <CardFace card={topDiscard} size="sm" onClick={isMyTurn && room.turnState === "draw" ? () => drawFrom("discard") : undefined} />
                 ) : (
-                  <div style={{ width: 54, height: 78, border: "2px dashed rgba(244,233,201,0.3)", borderRadius: 8 }} />
+                  <div style={{ width: 32, height: 46, border: "1px dashed rgba(244,233,201,0.2)", borderRadius: "4px" }} />
                 )}
               </div>
               {phase && room.status === "playing" && (
-                <div style={{ textAlign: "center", maxWidth: 150 }}>
-                  <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 4 }}>YOUR PHASE {phase.id}</div>
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>{phase.label}</div>
+                <div style={{ textAlign: "center", maxWidth: "120px" }}>
+                  <div style={{ fontSize: "8px", opacity: 0.5 }}>PHASE {phase.id}</div>
+                  <div style={{ fontSize: "10px", fontWeight: 700, lineHeight: "1.2" }}>{phase.label}</div>
                 </div>
               )}
             </div>
 
+            {/* Turn Status */}
             {room.status === "playing" && (
-              <div style={{ textAlign: "center", marginBottom: 12, fontSize: 13, opacity: 0.85 }}>
+              <div style={{ textAlign: "center", fontSize: "11px", opacity: 0.7, marginBottom: "6px" }}>
                 {isMyTurn
                   ? room.turnState === "draw"
-                    ? "Your turn — tap the deck or discard pile to draw."
-                    : "Your turn — drag cards into a phase slot, onto a laid-down group to hit, or onto the discard pile to end your turn."
-                  : `⏳ Waiting for ${currentPlayer?.name}…`}
+                    ? "Tap deck or discard to draw"
+                    : "Drag cards to phase slots or discard"
+                  : `⏳ ${currentPlayer?.name}'s turn…`}
               </div>
             )}
 
+            {/* Laid Down Phases */}
             {Object.keys(room.table).length > 0 && (
-              <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: "8px" }}>
                 {Object.entries(room.table).map(([ownerId, groupsArr]) => {
                   const owner = room.players.find((p) => p.id === ownerId);
                   const canHitHere = isMyTurn && me?.laidDownThisRound && room.turnState === "action";
                   return (
-                    <div key={ownerId} style={{ marginBottom: 10 }}>
-                      <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}>{owner?.name}'s laid-down phase</div>
-                      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                    <div key={ownerId} style={{ marginBottom: "4px" }}>
+                      <div style={{ fontSize: "9px", opacity: 0.5, marginBottom: "2px" }}>{owner?.name}'s phase</div>
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                         {groupsArr.map((g, gi) => (
                           <div
                             key={gi}
                             data-dropzone={`hit:${ownerId}:${gi}`}
                             style={{
-                              display: "flex", gap: 3, background: "rgba(0,0,0,0.15)", padding: 6, borderRadius: 8,
-                              border: canHitHere ? "1.5px dashed rgba(232,184,75,0.5)" : "1.5px dashed transparent",
+                              display: "flex", gap: "2px", background: "rgba(0,0,0,0.1)", padding: "4px", borderRadius: "4px",
+                              border: canHitHere ? "1px dashed rgba(232,184,75,0.4)" : "1px dashed transparent",
                             }}
                           >
                             {g.cards.map((c) => <CardFace key={c.id} card={c} size="sm" />)}
@@ -1386,26 +1369,27 @@ export default function Phase10App() {
               </div>
             )}
 
+            {/* Phase Builder */}
             {isMyTurn && room.turnState === "action" && me && !me.laidDownThisRound && phase && (
-              <div style={{ background: "rgba(0,0,0,0.18)", borderRadius: 12, padding: 12, marginBottom: 14 }}>
-                <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>
-                  🎯 Build Phase {phase.id}: drag cards from your hand into a slot below, then confirm.
+              <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "8px", marginBottom: "8px" }}>
+                <div style={{ fontSize: "10px", opacity: 0.6, marginBottom: "6px" }}>
+                  🎯 Build Phase {phase.id}
                 </div>
-                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                   {phase.reqs.map((req, i) => (
                     <div
                       key={i}
                       data-dropzone={`group:${i}`}
                       style={{
-                        background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: 8, minWidth: 150,
-                        border: "2px dashed rgba(232,184,75,0.45)",
+                        background: "rgba(0,0,0,0.15)", borderRadius: "6px", padding: "4px", minWidth: "100px", flex: "1",
+                        border: "1px dashed rgba(232,184,75,0.3)",
                       }}
                     >
-                      <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 6 }}>
-                        Group {i + 1}: {req.type === "set" ? "Set" : req.type === "run" ? "Run" : "Color"} of {req.count} ({groups[i]?.length || 0}/{req.count})
+                      <div style={{ fontSize: "8px", opacity: 0.5, marginBottom: "2px" }}>
+                        {req.type === "set" ? "Set" : req.type === "run" ? "Run" : "Color"} of {req.count} ({groups[i]?.length || 0}/{req.count})
                       </div>
-                      <div style={{ display: "flex", gap: 3, flexWrap: "wrap", minHeight: 48 }}>
-                        {(groups[i] || []).length === 0 && <div style={{ fontSize: 11, opacity: 0.4, alignSelf: "center" }}>⬇️ drop cards here</div>}
+                      <div style={{ display: "flex", gap: "2px", flexWrap: "wrap", minHeight: "30px" }}>
+                        {(groups[i] || []).length === 0 && <div style={{ fontSize: "9px", opacity: 0.3, alignSelf: "center" }}>⬇️ drop</div>}
                         {(groups[i] || []).map((c) => (
                           <CardFace key={c.id} card={c} size="sm" draggable onPointerDownDrag={(e) => beginDrag(e, c)} />
                         ))}
@@ -1413,26 +1397,28 @@ export default function Phase10App() {
                     </div>
                   ))}
                 </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <button onClick={layDownPhase} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#E8B84B", color: "#1B4332", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-                    ✅ Confirm &amp; Lay Down Phase
+                <div style={{ display: "flex", gap: "6px", marginTop: "6px" }}>
+                  <button onClick={layDownPhase} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#E8B84B", color: "#1B4332", fontWeight: 700, fontSize: "11px", cursor: "pointer" }}>
+                    ✅ Confirm
                   </button>
-                  <button onClick={() => setGroups([[], []])} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid rgba(244,233,201,0.4)", background: "transparent", color: "#F4E9C9", fontSize: 13, cursor: "pointer" }}>
-                    Clear groups
+                  <button onClick={() => setGroups([[], []])} style={{ padding: "4px 12px", borderRadius: "6px", border: "1px solid rgba(244,233,201,0.3)", background: "transparent", color: "#F4E9C9", fontSize: "11px", cursor: "pointer" }}>
+                    Clear
                   </button>
                 </div>
-                {error && <div style={{ marginTop: 8, color: "#F2A5A0", fontSize: 12 }}>{error}</div>}
+                {error && <div style={{ marginTop: "4px", color: "#F2A5A0", fontSize: "10px" }}>{error}</div>}
               </div>
             )}
 
+            {/* Hand */}
             {me && (
-              <div style={{ marginTop: 8 }} data-dropzone="hand">
-                <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Your hand ({me.hand.length})</div>
-                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "center", background: "rgba(0,0,0,0.15)", borderRadius: 12, padding: 12, minHeight: 90 }}>
+              <div style={{ marginTop: "6px" }} data-dropzone="hand">
+                <div style={{ fontSize: "10px", opacity: 0.5, marginBottom: "4px" }}>Your hand ({me.hand.length})</div>
+                <div style={{ display: "flex", gap: "3px", flexWrap: "wrap", justifyContent: "center", background: "rgba(0,0,0,0.1)", borderRadius: "8px", padding: "6px", minHeight: "50px" }}>
                   {me.hand.slice().sort((a, b) => (a.number || 99) - (b.number || 99)).map((c) => (
                     <CardFace
                       key={c.id}
                       card={c}
+                      size="sm"
                       dim={inAnyGroup(c.id) || (drag?.cardId === c.id)}
                       draggable={isMyTurn && room.turnState === "action"}
                       onPointerDownDrag={(e) => beginDrag(e, c)}
@@ -1442,8 +1428,9 @@ export default function Phase10App() {
               </div>
             )}
 
-            <div style={{ marginTop: 16, fontSize: 11, opacity: 0.55, maxHeight: 70, overflowY: "auto" }}>
-              {room.log.slice(-6).map((l, i) => <div key={i}>📝 {l}</div>)}
+            {/* Log */}
+            <div style={{ marginTop: "6px", fontSize: "9px", opacity: 0.4, maxHeight: "40px", overflowY: "auto" }}>
+              {room.log.slice(-4).map((l, i) => <div key={i}>📝 {l}</div>)}
             </div>
           </div>
         </div>
