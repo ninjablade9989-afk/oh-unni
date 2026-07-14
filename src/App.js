@@ -8,8 +8,9 @@ import { subscribeToRoom } from './supabase';
    - Pre-build phases anytime
    - Confirm only after drawing
    - Turn indicator (glow/bounce)
-   - Round winner celebration
+   - Round winner celebration with player name
    - Help/How-to-play modal
+   - Phase cards stay when discarding
 --------------------------------------------------------------- */
 
 // Audio Manager
@@ -570,7 +571,6 @@ function resolveDraw(r, playerId, source) {
 function resolveLayDown(r, playerId, activeGroups) {
   const player = r.players.find((p) => p.id === playerId);
   if (!player || player.laidDownThisRound) return r;
-  // Check if player has drawn this turn
   if (!r.hasDrawn) return r;
   const phase = PHASES[player.phaseIndex];
   const ok = phase.reqs.every((req, i) => validateGroup(activeGroups[i] || [], req));
@@ -623,17 +623,30 @@ function resolveDiscard(r, playerId, cardId) {
     const finished = results.some((p) => p.phaseIndex >= 10);
     if (finished) {
       const winner = results.slice().sort((a, b) => a.score - b.score)[0];
-      log.push(`Round ${r.round} complete. ${winner.name} wins the game with the lowest score!`);
+      log.push(`🏆 ${winner.name} WINS THE GAME! 🏆`);
       AudioManager.playWinSound();
       AudioManager.stopBackgroundMusic();
-      return { ...r, players: results.map((p) => ({ ...p, laidDownThisRound: false })), discard, status: "gameOver", winnerId: winner.id, log, hasDrawn: false };
+      return { 
+        ...r, 
+        players: results.map((p) => ({ ...p, laidDownThisRound: false })), 
+        discard, 
+        status: "gameOver", 
+        winnerId: winner.id, 
+        log,
+        table: {},
+        hasDrawn: false,
+      };
     }
     const deck = makeDeck();
     const dealt = results.map((p) => ({ ...p, hand: [], laidDownThisRound: false }));
     for (let i = 0; i < 10; i++) for (const p of dealt) p.hand.push(deck.pop());
     const newDiscard = [deck.pop()];
-    log.push(`🎉 ${player.name} WON ROUND ${r.round}! 🎉`);
+    
+    // ROUND WINNER CELEBRATION
+    const roundWinner = player;
+    log.push(`🎉🎊 ${roundWinner.name} WON ROUND ${r.round}! 🎊🎉`);
     log.push(`Round ${r.round} complete — dealing round ${r.round + 1}.`);
+    
     return {
       ...r,
       players: dealt,
@@ -646,6 +659,7 @@ function resolveDiscard(r, playerId, cardId) {
       turnStartedAt: Date.now(),
       log,
       hasDrawn: false,
+      roundWinner: roundWinner.name,
     };
   }
 
@@ -659,7 +673,18 @@ function resolveDiscard(r, playerId, cardId) {
     nextIdx = (nextIdx + 1) % r.players.length;
     skipNext = false;
   }
-  return { ...r, players, discard, currentPlayerIndex: nextIdx, turnState: "draw", skipNext, turnStartedAt: Date.now(), log, hasDrawn: false };
+  
+  return { 
+    ...r, 
+    players, 
+    discard, 
+    currentPlayerIndex: nextIdx, 
+    turnState: "draw", 
+    skipNext, 
+    turnStartedAt: Date.now(), 
+    log,
+    hasDrawn: false,
+  };
 }
 
 /* ---------- BOT PLAY TURN ---------- */
@@ -822,7 +847,6 @@ export default function Phase10App() {
         AudioManager.playTurnStartSound();
       }
     }
-    // Reset when turn changes
     if (current && current.id !== myId) {
       turnSoundPlayedRef.current = false;
     }
@@ -916,6 +940,7 @@ export default function Phase10App() {
       log: [`${name.trim()} created the room.`],
       winnerId: null,
       hasDrawn: false,
+      roundWinner: null,
     };
     await saveRoom(newRoom);
     setRoom(newRoom);
@@ -980,6 +1005,7 @@ export default function Phase10App() {
       turnStartedAt: Date.now(),
       log: [...room.log, "Game started! Dealing 10 cards to each player."],
       hasDrawn: false,
+      roundWinner: null,
     };
     await saveRoom(updated);
     setRoom(updated);
@@ -1032,6 +1058,7 @@ export default function Phase10App() {
       log: ["Solo game started — good luck!"], 
       winnerId: null,
       hasDrawn: false,
+      roundWinner: null,
     };
     setRoom(soloRoom);
     setMyId("you");
@@ -1059,11 +1086,12 @@ export default function Phase10App() {
   const phase = me ? PHASES[Math.min(me.phaseIndex, 9)] : null;
   const hasDrawn = room?.hasDrawn || false;
 
-  // Celebration detection
+  // Celebration detection - ROUND WINNER FIXED
   useEffect(() => {
     if (!room || !room.log) return;
     const logs = room.log;
     const lastLog = logs[logs.length - 1];
+    
     if (lastLog && lastLogRef.current !== lastLog) {
       lastLogRef.current = lastLog;
       
@@ -1081,14 +1109,15 @@ export default function Phase10App() {
         }
       }
       
-      // Check for round winner
+      // Check for round winner - FIXED
       if (lastLog.includes('WON ROUND')) {
-        const roundWinner = room.players.find(p => p.hand && p.hand.length === 0);
-        if (roundWinner) {
-          const roundMatch = lastLog.match(/Round (\d+)/);
+        const winnerMatch = lastLog.match(/🎉🎊 (.+?) WON ROUND/);
+        if (winnerMatch) {
+          const winnerName = winnerMatch[1];
+          const roundMatch = lastLog.match(/ROUND (\d+)/);
           const roundNum = roundMatch ? roundMatch[1] : '';
           setCelebration({
-            message: `🎉 ${roundWinner.name} WON ROUND ${roundNum}! 🎉`,
+            message: `🎉 ${winnerName} WON ROUND ${roundNum}! 🎉`,
             type: 'round'
           });
           AudioManager.playPhaseCompleteSound();
@@ -1097,8 +1126,8 @@ export default function Phase10App() {
       }
       
       // Check for game winner
-      if (lastLog.includes('wins the game')) {
-        const winnerMatch = lastLog.match(/(.+?) wins the game/);
+      if (lastLog.includes('WINS THE GAME')) {
+        const winnerMatch = lastLog.match(/🏆 (.+?) WINS THE GAME/);
         if (winnerMatch) {
           const winnerName = winnerMatch[1];
           setCelebration({
@@ -1111,7 +1140,7 @@ export default function Phase10App() {
         }
       }
     }
-  }, [room?.log, room?.isSolo, me?.name, room?.players]);
+  }, [room?.log, room?.isSolo, me?.name]);
 
   function drawFrom(source) {
     if (!isMyTurn || room?.turnState !== "draw") return;
@@ -1151,46 +1180,39 @@ export default function Phase10App() {
     updateRoom((r) => resolveHit(r, myId, cardId, ownerId, groupIdx));
   }
 
- function discardCard(cardId) {
-  if (!isMyTurn) {
-    setError("⚠️ It's not your turn!");
-    setTimeout(() => setError(""), 2000);
-    return;
+  function discardCard(cardId) {
+    if (!isMyTurn) {
+      setError("⚠️ It's not your turn!");
+      setTimeout(() => setError(""), 2000);
+      return;
+    }
+    if (!hasDrawn) {
+      setError("⚠️ You must draw a card first!");
+      setTimeout(() => setError(""), 2000);
+      return;
+    }
+    updateRoom((r) => resolveDiscard(r, myId, cardId));
+    setError("");
   }
-  if (!hasDrawn) {
-    setError("⚠️ You must draw a card first!");
-    setTimeout(() => setError(""), 2000);
-    return;
+
+  function autoEndTurn() {
+    updateRoom((r) => {
+      let rr = r;
+      if (rr.turnState === "draw") rr = resolveDraw(rr, myId, "deck");
+      const player = rr.players.find((p) => p.id === myId);
+      if (!player || player.hand.length === 0) return rr;
+      const nonWild = player.hand.filter((c) => c.kind !== "wild");
+      const pool = nonWild.length ? nonWild : player.hand;
+      const target = pool.slice().sort((a, b) => cardScore(b) - cardScore(a))[0];
+      return resolveDiscard(rr, myId, target.id);
+    });
+    setError("⏰ Time's up — a card was auto-discarded for you.");
   }
-  
-  updateRoom((r) => resolveDiscard(r, myId, cardId));
-  
-  // ✅ FIX: Phase groups stay as they are!
-  // Cards you dragged to phase slots remain there
-  setError("");
-}
 
- function autoEndTurn() {
-  updateRoom((r) => {
-    let rr = r;
-    if (rr.turnState === "draw") rr = resolveDraw(rr, myId, "deck");
-    const player = rr.players.find((p) => p.id === myId);
-    if (!player || player.hand.length === 0) return rr;
-    const nonWild = player.hand.filter((c) => c.kind !== "wild");
-    const pool = nonWild.length ? nonWild : player.hand;
-    const target = pool.slice().sort((a, b) => cardScore(b) - cardScore(a))[0];
-    return resolveDiscard(rr, myId, target.id);
-  });
-  
-  // ✅ FIX: Phase groups stay as they are!
-  setError("⏰ Time's up — a card was auto-discarded for you.");
-}
+  function clearAllGroups() {
+    setGroups([[], []]);
+  }
 
-/* ---- Clear all phase groups manually ---- */
-
-function clearAllGroups() {
-  setGroups([[], []]);
-}
   /* ---- bot turn driver (solo mode) ---- */
 
   useEffect(() => {
@@ -1239,7 +1261,6 @@ function clearAllGroups() {
   /* ---- drag & drop ---- */
 
   function beginDrag(e, card) {
-    // Allow drag anytime (even when not your turn) but only accept drops when it's your turn
     if (!room || room.status !== "playing") return;
     e.preventDefault();
     setDrag({ cardId: card.id, card, x: e.clientX, y: e.clientY });
@@ -1255,7 +1276,6 @@ function clearAllGroups() {
       const zoneEl = el ? el.closest("[data-dropzone]") : null;
       if (zoneEl) {
         const zone = zoneEl.getAttribute("data-dropzone");
-        // Only allow drops on phase slots during your turn
         if (zone.startsWith("group:") || zone.startsWith("hit:") || zone === "hand") {
           if (isMyTurn) {
             handleDrop(zone, drag.card);
@@ -1308,7 +1328,6 @@ function clearAllGroups() {
 
   const inAnyGroup = (cardId) => groups.some((arr) => arr.some((c) => c.id === cardId));
 
-  // Toggle mute function
   const toggleMute = () => {
     setIsMuted(!isMuted);
     AudioManager.toggleMute();
@@ -1618,7 +1637,7 @@ function clearAllGroups() {
             )}
 
             {/* Phase Builder - ALWAYS VISIBLE */}
-            {phase && room.status === "playing" && (
+            {phase && room.status === "playing" && !me?.laidDownThisRound && (
               <div style={{ 
                 background: "rgba(0,0,0,0.25)", 
                 borderRadius: "8px", 
@@ -1630,7 +1649,7 @@ function clearAllGroups() {
                 <div style={{ fontSize: "10px", opacity: 0.6, marginBottom: "6px", display: "flex", justifyContent: "space-between" }}>
                   <span>🎯 Build Phase {phase.id}</span>
                   <span style={{ fontSize: "9px" }}>
-                    {me?.laidDownThisRound ? "✅ Completed" : hasDrawn ? "🃏 Drawn - Ready!" : "⏳ Draw first!"}
+                    {hasDrawn ? "🃏 Drawn - Ready!" : "⏳ Draw first!"}
                   </span>
                 </div>
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
@@ -1664,35 +1683,53 @@ function clearAllGroups() {
                       padding: "4px 12px", 
                       borderRadius: "6px", 
                       border: "none", 
-                      background: (!isMyTurn || !hasDrawn || me?.laidDownThisRound) ? "#5a5a4a" : "#E8B84B", 
-                      color: (!isMyTurn || !hasDrawn || me?.laidDownThisRound) ? "#888" : "#1B4332", 
+                      background: (!isMyTurn || !hasDrawn) ? "#5a5a4a" : "#E8B84B", 
+                      color: (!isMyTurn || !hasDrawn) ? "#888" : "#1B4332", 
                       fontWeight: 700, 
                       fontSize: "11px", 
-                      cursor: (!isMyTurn || !hasDrawn || me?.laidDownThisRound) ? "default" : "pointer",
-                      opacity: (!isMyTurn || !hasDrawn || me?.laidDownThisRound) ? 0.5 : 1,
+                      cursor: (!isMyTurn || !hasDrawn) ? "default" : "pointer",
+                      opacity: (!isMyTurn || !hasDrawn) ? 0.5 : 1,
                     }}
                   >
                     ✅ Confirm
                   </button>
-          <button 
-  onClick={clearAllGroups}
-  style={{ 
-    padding: "4px 12px", 
-    borderRadius: "6px", 
-    border: "1px solid rgba(244,233,201,0.3)", 
-    background: "transparent", 
-    color: "#F4E9C9", 
-    fontSize: "11px", 
-    cursor: "pointer" 
-  }}
->
-  ✖ Clear All
-</button>
+                  <button 
+                    onClick={clearAllGroups}
+                    style={{ 
+                      padding: "4px 12px", 
+                      borderRadius: "6px", 
+                      border: "1px solid rgba(244,233,201,0.3)", 
+                      background: "transparent", 
+                      color: "#F4E9C9", 
+                      fontSize: "11px", 
+                      cursor: "pointer" 
+                    }}
+                  >
+                    ✖ Clear All
+                  </button>
                   {!isMyTurn && <span style={{ fontSize: "9px", opacity: 0.5 }}>⏳ Wait for your turn</span>}
                   {isMyTurn && !hasDrawn && <span style={{ fontSize: "9px", color: "#E8B84B" }}>⚠️ Draw a card first!</span>}
-                  {isMyTurn && hasDrawn && me?.laidDownThisRound && <span style={{ fontSize: "9px", color: "#7DBE8C" }}>✅ Phase laid down!</span>}
                 </div>
                 {error && <div style={{ marginTop: "4px", color: "#F2A5A0", fontSize: "10px" }}>{error}</div>}
+              </div>
+            )}
+
+            {/* Phase Complete Message */}
+            {phase && room.status === "playing" && me?.laidDownThisRound && (
+              <div style={{ 
+                background: "rgba(0,0,0,0.15)", 
+                borderRadius: "8px", 
+                padding: "8px", 
+                marginBottom: "8px",
+                textAlign: "center",
+                border: "1px solid #7DBE8C",
+              }}>
+                <div style={{ fontSize: "12px", fontWeight: "bold", color: "#7DBE8C" }}>
+                  ✅ Phase {phase.id} Complete! 🎉
+                </div>
+                <div style={{ fontSize: "10px", opacity: 0.6 }}>
+                  You laid down: {phase.label}
+                </div>
               </div>
             )}
 
@@ -1721,7 +1758,7 @@ function clearAllGroups() {
                       card={c}
                       size="sm"
                       dim={inAnyGroup(c.id) || (drag?.cardId === c.id)}
-                      draggable={true} // Always draggable for pre-building
+                      draggable={true}
                       glowing={isMyTurnGlow}
                       bouncing={isMyTurnGlow}
                       onPointerDownDrag={(e) => beginDrag(e, c)}
