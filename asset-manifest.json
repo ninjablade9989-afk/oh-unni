@@ -1,13 +1,13 @@
 {
   "files": {
     "main.css": "/oh-unni/static/css/main.e6c13ad2.css",
-    "main.js": "/oh-unni/static/js/main.e1493f8a.js",
+    "main.js": "/oh-unni/static/js/main.a05a2e36.js",
     "index.html": "/oh-unni/index.html",
     "main.e6c13ad2.css.map": "/oh-unni/static/css/main.e6c13ad2.css.map",
-    "main.e1493f8a.js.map": "/oh-unni/static/js/main.e1493f8a.js.map"
+    "main.a05a2e36.js.map": "/oh-unni/static/js/main.a05a2e36.js.map"
   },
   "entrypoints": [
     "static/css/main.e6c13ad2.css",
-    "static/js/main.e1493f8a.js"
+    "static/js/main.a05a2e36.js"
   ]
 }
