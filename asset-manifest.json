@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/oh-unni/static/css/main.e6c13ad2.css",
+    "main.js": "/oh-unni/static/js/main.1b10117f.js",
+    "index.html": "/oh-unni/index.html",
+    "main.e6c13ad2.css.map": "/oh-unni/static/css/main.e6c13ad2.css.map",
+    "main.1b10117f.js.map": "/oh-unni/static/js/main.1b10117f.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.e6c13ad2.css",
+    "static/js/main.1b10117f.js"
+  ]
+}
