@@ -616,7 +616,82 @@ function canHit(card, tableGroup) {
   return false;
 }
 
-/* ---------- Hint System ---------- */
+/* ---------- Helper functions for bot ---------- */
+
+function combinationsOf(indices, k, cap, counter) {
+  const results = [];
+  function comb(start, chosen) {
+    if (counter.n > cap) return;
+    if (chosen.length === k) {
+      results.push(chosen.slice());
+      counter.n++;
+      return;
+    }
+    for (let i = start; i <= indices.length - (k - chosen.length); i++) {
+      chosen.push(indices[i]);
+      comb(i + 1, chosen);
+      chosen.pop();
+      if (counter.n > cap) return;
+    }
+  }
+  comb(0, []);
+  return results;
+}
+
+function attemptAutoLayout(hand, reqs) {
+  const n = hand.length;
+  const used = new Array(n).fill(false);
+  const groups = reqs.map(() => []);
+  const counter = { n: 0 };
+  const CAP = 4000;
+
+  function backtrack(reqIdx) {
+    if (counter.n > CAP) return false;
+    if (reqIdx === reqs.length) return true;
+    const req = reqs[reqIdx];
+    const unused = [];
+    for (let i = 0; i < n; i++) if (!used[i]) unused.push(i);
+    const combos = combinationsOf(unused, req.count, CAP, counter);
+    for (const combo of combos) {
+      const groupCards = combo.map((i) => hand[i]);
+      if (validateGroup(groupCards, req)) {
+        combo.forEach((i) => (used[i] = true));
+        groups[reqIdx] = groupCards;
+        if (backtrack(reqIdx + 1)) return true;
+        combo.forEach((i) => (used[i] = false));
+      }
+      if (counter.n > CAP) return false;
+    }
+    return false;
+  }
+  return backtrack(0) ? groups : null;
+}
+
+function getPhaseCards(hand, phase) {
+  if (!phase) return [];
+  const used = new Set();
+  const result = [];
+  phase.reqs.forEach(req => {
+    const combos = getCombinations(hand, req.count);
+    for (const combo of combos) {
+      if (validateGroup(combo, req) && !combo.some(c => used.has(c.id))) {
+        combo.forEach(c => used.add(c.id));
+        result.push(...combo);
+        break;
+      }
+    }
+  });
+  return result;
+}
+
+function getCombinations(arr, k) {
+  if (k === 0) return [[]];
+  if (arr.length === 0) return [];
+  const [first, ...rest] = arr;
+  const withFirst = getCombinations(rest, k - 1).map(combo => [first, ...combo]);
+  const withoutFirst = getCombinations(rest, k);
+  return [...withFirst, ...withoutFirst];
+}
 
 function getHints(hand, phase) {
   if (!phase) return [];
@@ -637,161 +712,6 @@ function getHints(hand, phase) {
   });
   
   return hints.slice(0, 3);
-}
-
-function getCombinations(arr, k) {
-  if (k === 0) return [[]];
-  if (arr.length === 0) return [];
-  const [first, ...rest] = arr;
-  const withFirst = getCombinations(rest, k - 1).map(combo => [first, ...combo]);
-  const withoutFirst = getCombinations(rest, k);
-  return [...withFirst, ...withoutFirst];
-}
-
-/* ---------- bot brain with difficulty ---------- */
-
-function botPlayTurn(r0, playerId, difficulty = "medium") {
-  console.log('🤖 Bot turn started for:', playerId, 'Difficulty:', difficulty);
-  let r = r0;
-  
-  // Bot decision based on difficulty
-  const botDecision = {
-    // Easy: Random choices
-    easy: {
-      drawSource: () => Math.random() > 0.5 ? "deck" : "discard",
-      discardStrategy: (hand) => {
-        const sorted = [...hand].sort((a, b) => cardScore(b) - cardScore(a));
-        return sorted[Math.floor(Math.random() * Math.min(sorted.length, 3))];
-      },
-      phasePriority: () => Math.random() > 0.3,
-    },
-    // Medium: Strategic
-    medium: {
-      drawSource: (r) => {
-        const top = r.discard[r.discard.length - 1];
-        if (top && top.kind === "number") {
-          const matches = r.players.find(p => p.id === playerId).hand.filter(c => c.number === top.number).length;
-          return matches >= 1 ? "discard" : "deck";
-        }
-        return "deck";
-      },
-      discardStrategy: (hand) => {
-        const nonWild = hand.filter(c => c.kind !== "wild");
-        const sorted = nonWild.length ? nonWild.sort((a, b) => cardScore(b) - cardScore(a)) : hand;
-        return sorted[0];
-      },
-      phasePriority: () => true,
-    },
-    // Hard: Advanced
-    hard: {
-      drawSource: (r) => {
-        const top = r.discard[r.discard.length - 1];
-        if (top && top.kind === "number") {
-          const matches = r.players.find(p => p.id === playerId).hand.filter(c => c.number === top.number).length;
-          return matches >= 2 ? "discard" : "deck";
-        }
-        if (top && top.kind === "wild") return "discard";
-        return "deck";
-      },
-      discardStrategy: (hand, phase) => {
-        // Discard cards that don't help the current phase
-        const phaseCards = phase ? getPhaseCards(hand, phase) : [];
-        const nonPhase = hand.filter(c => !phaseCards.includes(c));
-        if (nonPhase.length > 0) {
-          return nonPhase.sort((a, b) => cardScore(b) - cardScore(a))[0];
-        }
-        return hand.sort((a, b) => cardScore(b) - cardScore(a))[0];
-      },
-      phasePriority: () => true,
-    }
-  };
-  
-  const strategy = botDecision[difficulty] || botDecision.medium;
-  
-  // Draw
-  if (r.turnState === "draw") {
-    const source = typeof strategy.drawSource === 'function' ? strategy.drawSource(r) : "deck";
-    console.log('🤖 Bot drawing from', source);
-    r = resolveDraw(r, playerId, source);
-  }
-  
-  const player = r.players.find((p) => p.id === playerId);
-  if (!player) return r0;
-  
-  // Try to lay down phase
-  if (!player.laidDownThisRound && (typeof strategy.phasePriority === 'function' ? strategy.phasePriority() : true)) {
-    const phase = PHASES[player.phaseIndex];
-    const layout = attemptAutoLayout(player.hand, phase.reqs);
-    if (layout) {
-      console.log('🤖 Bot laying down phase');
-      r = resolveLayDown(r, playerId, layout);
-    }
-  }
-  
-  // Try to hit cards
-  const updatedPlayer = r.players.find((p) => p.id === playerId);
-  if (updatedPlayer && updatedPlayer.laidDownThisRound) {
-    let guard = 0;
-    let progress = true;
-    while (progress && guard < 25) {
-      guard++;
-      progress = false;
-      const p2 = r.players.find((p) => p.id === playerId);
-      if (!p2 || !p2.laidDownThisRound) break;
-      for (const card of p2.hand) {
-        for (const ownerId of Object.keys(r.table || {})) {
-          const groupsArr = r.table[ownerId];
-          if (!groupsArr) continue;
-          for (let gi = 0; gi < groupsArr.length; gi++) {
-            if (canHit(card, groupsArr[gi])) {
-              r = resolveHit(r, playerId, card.id, ownerId, gi);
-              progress = true;
-              break;
-            }
-          }
-          if (progress) break;
-        }
-        if (progress) break;
-      }
-    }
-  }
-  
-  // Discard
-  const pFinal = r.players.find((p) => p.id === playerId);
-  if (pFinal && pFinal.hand.length > 0) {
-    const phase = PHASES[pFinal.phaseIndex];
-    let target;
-    if (typeof strategy.discardStrategy === 'function') {
-      target = strategy.discardStrategy(pFinal.hand, phase);
-    } else {
-      const sorted = [...pFinal.hand].sort((a, b) => cardScore(b) - cardScore(a));
-      target = sorted[0];
-    }
-    if (target) {
-      console.log('🤖 Bot discarding card');
-      r = resolveDiscard(r, playerId, target.id);
-    }
-  }
-  
-  console.log('🤖 Bot turn complete');
-  return r;
-}
-
-function getPhaseCards(hand, phase) {
-  if (!phase) return [];
-  const used = new Set();
-  const result = [];
-  phase.reqs.forEach(req => {
-    const combos = getCombinations(hand, req.count);
-    for (const combo of combos) {
-      if (validateGroup(combo, req) && !combo.some(c => used.has(c.id))) {
-        combo.forEach(c => used.add(c.id));
-        result.push(...combo);
-        break;
-      }
-    }
-  });
-  return result;
 }
 
 /* ---------- turn-resolution engine ---------- */
@@ -994,6 +914,125 @@ function resolveDiscard(r, playerId, cardId) {
     hasDrawn: false,
     chatMessages: r.chatMessages || [],
   };
+}
+
+/* ---------- BOT PLAY TURN ---------- */
+function botPlayTurn(r0, playerId, difficulty = "medium") {
+  console.log('🤖 Bot turn started for:', playerId, 'Difficulty:', difficulty);
+  let r = r0;
+  
+  const botDecision = {
+    easy: {
+      drawSource: () => Math.random() > 0.5 ? "deck" : "discard",
+      discardStrategy: (hand) => {
+        const sorted = [...hand].sort((a, b) => cardScore(b) - cardScore(a));
+        return sorted[Math.floor(Math.random() * Math.min(sorted.length, 3))];
+      },
+      phasePriority: () => Math.random() > 0.3,
+    },
+    medium: {
+      drawSource: (r) => {
+        const top = r.discard[r.discard.length - 1];
+        if (top && top.kind === "number") {
+          const matches = r.players.find(p => p.id === playerId).hand.filter(c => c.number === top.number).length;
+          return matches >= 1 ? "discard" : "deck";
+        }
+        return "deck";
+      },
+      discardStrategy: (hand) => {
+        const nonWild = hand.filter(c => c.kind !== "wild");
+        const sorted = nonWild.length ? nonWild.sort((a, b) => cardScore(b) - cardScore(a)) : hand;
+        return sorted[0];
+      },
+      phasePriority: () => true,
+    },
+    hard: {
+      drawSource: (r) => {
+        const top = r.discard[r.discard.length - 1];
+        if (top && top.kind === "number") {
+          const matches = r.players.find(p => p.id === playerId).hand.filter(c => c.number === top.number).length;
+          return matches >= 2 ? "discard" : "deck";
+        }
+        if (top && top.kind === "wild") return "discard";
+        return "deck";
+      },
+      discardStrategy: (hand, phase) => {
+        const phaseCards = phase ? getPhaseCards(hand, phase) : [];
+        const nonPhase = hand.filter(c => !phaseCards.some(pc => pc.id === c.id));
+        if (nonPhase.length > 0) {
+          return nonPhase.sort((a, b) => cardScore(b) - cardScore(a))[0];
+        }
+        return hand.sort((a, b) => cardScore(b) - cardScore(a))[0];
+      },
+      phasePriority: () => true,
+    }
+  };
+  
+  const strategy = botDecision[difficulty] || botDecision.medium;
+  
+  if (r.turnState === "draw") {
+    const source = typeof strategy.drawSource === 'function' ? strategy.drawSource(r) : "deck";
+    console.log('🤖 Bot drawing from', source);
+    r = resolveDraw(r, playerId, source);
+  }
+  
+  const player = r.players.find((p) => p.id === playerId);
+  if (!player) return r0;
+  
+  if (!player.laidDownThisRound && (typeof strategy.phasePriority === 'function' ? strategy.phasePriority() : true)) {
+    const phase = PHASES[player.phaseIndex];
+    const layout = attemptAutoLayout(player.hand, phase.reqs);
+    if (layout) {
+      console.log('🤖 Bot laying down phase');
+      r = resolveLayDown(r, playerId, layout);
+    }
+  }
+  
+  const updatedPlayer = r.players.find((p) => p.id === playerId);
+  if (updatedPlayer && updatedPlayer.laidDownThisRound) {
+    let guard = 0;
+    let progress = true;
+    while (progress && guard < 25) {
+      guard++;
+      progress = false;
+      const p2 = r.players.find((p) => p.id === playerId);
+      if (!p2 || !p2.laidDownThisRound) break;
+      for (const card of p2.hand) {
+        for (const ownerId of Object.keys(r.table || {})) {
+          const groupsArr = r.table[ownerId];
+          if (!groupsArr) continue;
+          for (let gi = 0; gi < groupsArr.length; gi++) {
+            if (canHit(card, groupsArr[gi])) {
+              r = resolveHit(r, playerId, card.id, ownerId, gi);
+              progress = true;
+              break;
+            }
+          }
+          if (progress) break;
+        }
+        if (progress) break;
+      }
+    }
+  }
+  
+  const pFinal = r.players.find((p) => p.id === playerId);
+  if (pFinal && pFinal.hand.length > 0) {
+    const phase = PHASES[pFinal.phaseIndex];
+    let target;
+    if (typeof strategy.discardStrategy === 'function') {
+      target = strategy.discardStrategy(pFinal.hand, phase);
+    } else {
+      const sorted = [...pFinal.hand].sort((a, b) => cardScore(b) - cardScore(a));
+      target = sorted[0];
+    }
+    if (target) {
+      console.log('🤖 Bot discarding card');
+      r = resolveDiscard(r, playerId, target.id);
+    }
+  }
+  
+  console.log('🤖 Bot turn complete');
+  return r;
 }
 
 /* ---------- storage helpers ---------- */
@@ -1406,7 +1445,6 @@ export default function Phase10App() {
       lastLogRef.current = lastLog;
       console.log('📝 New log detected:', lastLog);
       
-      // Check for phase completion
       if (lastLog.includes('laid down Phase')) {
         const playerName = lastLog.split(' laid down')[0];
         const isCurrentPlayer = room.isSolo || (me && playerName === me.name);
@@ -1420,7 +1458,6 @@ export default function Phase10App() {
         }
       }
       
-      // Check for round winner
       if (lastLog.includes('WON ROUND')) {
         console.log('🎯 Round winner detected!');
         const parts = lastLog.split(' ');
@@ -1450,7 +1487,6 @@ export default function Phase10App() {
         }
       }
       
-      // Check for game winner
       if (lastLog.includes('WINS THE GAME')) {
         const parts = lastLog.split(' ');
         let winnerName = null;
@@ -1477,7 +1513,6 @@ export default function Phase10App() {
 
   function drawFrom(source) {
     if (!isMyTurn || room?.turnState !== "draw") return;
-    // Save undo state
     setUndoStack([...undoStack, { groups: groups.map(g => [...g]) }]);
     updateRoom((r) => resolveDraw(r, myId, source));
   }
@@ -1506,7 +1541,6 @@ export default function Phase10App() {
       setTimeout(() => setError(""), 2000);
       return;
     }
-    // Save undo state
     setUndoStack([...undoStack, { groups: groups.map(g => [...g]) }]);
     updateRoom((r) => resolveLayDown(r, myId, activeGroups));
     setGroups([[], []]);
@@ -1516,7 +1550,6 @@ export default function Phase10App() {
   }
 
   function hitCard(cardId, ownerId, groupIdx) {
-    // Save undo state
     setUndoStack([...undoStack, { groups: groups.map(g => [...g]) }]);
     updateRoom((r) => resolveHit(r, myId, cardId, ownerId, groupIdx));
   }
@@ -1532,7 +1565,6 @@ export default function Phase10App() {
       setTimeout(() => setError(""), 2000);
       return;
     }
-    // Save undo state
     setUndoStack([...undoStack, { groups: groups.map(g => [...g]) }]);
     updateRoom((r) => resolveDiscard(r, myId, cardId));
     setError("");
