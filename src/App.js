@@ -2,8 +2,14 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { subscribeToRoom } from './supabase';
 
 /* ---------------------------------------------------------------
-   OH UNNI - Compact UI Design (Mattel Inspired)
-   Clean, organized layout with minimal scrolling
+   OH UNNI - Card Game
+   Complete Feature Update:
+   - Phase box always visible
+   - Pre-build phases anytime
+   - Confirm only after drawing
+   - Turn indicator (glow/bounce)
+   - Round winner celebration
+   - Help/How-to-play modal
 --------------------------------------------------------------- */
 
 // Audio Manager
@@ -90,6 +96,26 @@ const AudioManager = {
     } catch (e) {}
   },
   
+  playTurnStartSound() {
+    try {
+      const ctx = this.init();
+      const notes = [523, 659];
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = freq;
+        osc.type = 'sine';
+        const startTime = ctx.currentTime + i * 0.1;
+        gain.gain.setValueAtTime(0.1, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.12);
+        osc.start(startTime);
+        osc.stop(startTime + 0.12);
+      });
+    } catch (e) {}
+  },
+  
   playBackgroundMusic() {
     if (this.musicPlaying) return;
     try {
@@ -141,6 +167,106 @@ const AudioManager = {
   }
 };
 
+// Help Modal Component
+function HelpModal({ onClose }) {
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0,0,0,0.8)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 10001,
+    }}>
+      <div style={{
+        background: '#1F5C42',
+        padding: '30px',
+        borderRadius: '16px',
+        maxWidth: '500px',
+        maxHeight: '80vh',
+        overflowY: 'auto',
+        color: '#F4E9C9',
+        border: '2px solid #E8B84B',
+      }}>
+        <div style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px', textAlign: 'center', color: '#E8B84B' }}>
+          🃏 How to Play OH UNNI
+        </div>
+        
+        <div style={{ marginBottom: '16px' }}>
+          <h3 style={{ color: '#E8B84B', marginBottom: '6px' }}>🎯 Goal</h3>
+          <p>Complete 10 phases before your opponents!</p>
+        </div>
+        
+        <div style={{ marginBottom: '16px' }}>
+          <h3 style={{ color: '#E8B84B', marginBottom: '6px' }}>📋 Phase Cards</h3>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>2 Sets of 3</span>
+            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Set of 3 + Run of 4</span>
+            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Set of 4 + Run of 4</span>
+            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Run of 7</span>
+            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Run of 8</span>
+            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Run of 9</span>
+            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>2 Sets of 4</span>
+            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>7 of One Color</span>
+            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Set of 5 + Set of 2</span>
+            <span style={{ background: 'rgba(232,184,75,0.2)', padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Set of 5 + Set of 3</span>
+          </div>
+        </div>
+        
+        <div style={{ marginBottom: '16px' }}>
+          <h3 style={{ color: '#E8B84B', marginBottom: '6px' }}>🃏 Cards</h3>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <div style={{ background: '#FAF6ED', color: '#C4453E', padding: '4px 10px', borderRadius: '4px', fontSize: '14px', fontWeight: 'bold' }}>1-12</div>
+            <div style={{ background: '#3A3A4E', color: '#F4E9C9', padding: '4px 10px', borderRadius: '4px', fontSize: '14px', fontWeight: 'bold' }}>★ Wild</div>
+            <div style={{ background: '#2B2B2B', color: '#F4E9C9', padding: '4px 10px', borderRadius: '4px', fontSize: '14px', fontWeight: 'bold' }}>⊘ Skip</div>
+          </div>
+          <p style={{ fontSize: '12px', opacity: 0.7, marginTop: '4px' }}>Wild = any card • Skip = opponent loses turn</p>
+        </div>
+        
+        <div style={{ marginBottom: '16px' }}>
+          <h3 style={{ color: '#E8B84B', marginBottom: '6px' }}>🎮 How to Play</h3>
+          <ol style={{ fontSize: '13px', paddingLeft: '20px' }}>
+            <li style={{ marginBottom: '4px' }}>Draw a card from DECK or DISCARD</li>
+            <li style={{ marginBottom: '4px' }}>Drag cards to build your phase</li>
+            <li style={{ marginBottom: '4px' }}>Click ✓ Confirm to lay down phase</li>
+            <li style={{ marginBottom: '4px' }}>Discard one card to end turn</li>
+            <li style={{ marginBottom: '4px' }}>First to finish all 10 phases wins!</li>
+          </ol>
+        </div>
+        
+        <div style={{ marginBottom: '16px' }}>
+          <h3 style={{ color: '#E8B84B', marginBottom: '6px' }}>🎯 Scoring</h3>
+          <p style={{ fontSize: '13px' }}>
+            Cards 1-9 = 5 pts • Cards 10-12 = 10 pts • Skip = 15 pts • Wild = 25 pts<br/>
+            <span style={{ opacity: 0.7 }}>Lowest score wins!</span>
+          </p>
+        </div>
+        
+        <button
+          onClick={onClose}
+          style={{
+            width: '100%',
+            padding: '10px',
+            borderRadius: '8px',
+            border: 'none',
+            background: '#E8B84B',
+            color: '#1B4332',
+            fontWeight: 'bold',
+            fontSize: '16px',
+            cursor: 'pointer',
+          }}
+        >
+          Got it! 🎮
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Celebration Component
 function Celebration({ message, onClose, type }) {
   useEffect(() => {
@@ -153,7 +279,8 @@ function Celebration({ message, onClose, type }) {
   const getEmojis = () => {
     if (type === 'win') return ['🏆', '🎊', '👑', '🥇'];
     if (type === 'round') return ['🎉', '👏', '⭐', '🎊'];
-    return ['🌟', '✨', '💫', '🎉'];
+    if (type === 'phase') return ['🌟', '✨', '💫', '🎉'];
+    return ['🎯', '⭐', '💪', '🎉'];
   };
 
   const emojis = getEmojis();
@@ -437,12 +564,14 @@ function resolveDraw(r, playerId, source) {
   }
   player.hand = [...player.hand, card];
   AudioManager.playDrawSound();
-  return { ...r, players, deck, discard, turnState: "action" };
+  return { ...r, players, deck, discard, turnState: "action", hasDrawn: true };
 }
 
 function resolveLayDown(r, playerId, activeGroups) {
   const player = r.players.find((p) => p.id === playerId);
   if (!player || player.laidDownThisRound) return r;
+  // Check if player has drawn this turn
+  if (!r.hasDrawn) return r;
   const phase = PHASES[player.phaseIndex];
   const ok = phase.reqs.every((req, i) => validateGroup(activeGroups[i] || [], req));
   if (!ok) return r;
@@ -497,12 +626,13 @@ function resolveDiscard(r, playerId, cardId) {
       log.push(`Round ${r.round} complete. ${winner.name} wins the game with the lowest score!`);
       AudioManager.playWinSound();
       AudioManager.stopBackgroundMusic();
-      return { ...r, players: results.map((p) => ({ ...p, laidDownThisRound: false })), discard, status: "gameOver", winnerId: winner.id, log };
+      return { ...r, players: results.map((p) => ({ ...p, laidDownThisRound: false })), discard, status: "gameOver", winnerId: winner.id, log, hasDrawn: false };
     }
     const deck = makeDeck();
     const dealt = results.map((p) => ({ ...p, hand: [], laidDownThisRound: false }));
     for (let i = 0; i < 10; i++) for (const p of dealt) p.hand.push(deck.pop());
     const newDiscard = [deck.pop()];
+    log.push(`🎉 ${player.name} WON ROUND ${r.round}! 🎉`);
     log.push(`Round ${r.round} complete — dealing round ${r.round + 1}.`);
     return {
       ...r,
@@ -515,6 +645,7 @@ function resolveDiscard(r, playerId, cardId) {
       turnState: "draw",
       turnStartedAt: Date.now(),
       log,
+      hasDrawn: false,
     };
   }
 
@@ -528,7 +659,7 @@ function resolveDiscard(r, playerId, cardId) {
     nextIdx = (nextIdx + 1) % r.players.length;
     skipNext = false;
   }
-  return { ...r, players, discard, currentPlayerIndex: nextIdx, turnState: "draw", skipNext, turnStartedAt: Date.now(), log };
+  return { ...r, players, discard, currentPlayerIndex: nextIdx, turnState: "draw", skipNext, turnStartedAt: Date.now(), log, hasDrawn: false };
 }
 
 /* ---------- BOT PLAY TURN ---------- */
@@ -577,10 +708,9 @@ async function saveRoom(room) {
 
 /* ---------- card visual - Compact ---------- */
 const CardFace = React.forwardRef(function CardFace(
-  { card, size = "md", selected, onClick, faceDown, dim, draggable, onPointerDownDrag },
+  { card, size = "md", selected, onClick, faceDown, dim, draggable, onPointerDownDrag, glowing, bouncing },
   ref
 ) {
-  // Compact card sizes
   const dims = size === "sm" ? { w: 32, h: 46, fs: 11 } : 
                size === "lg" ? { w: 55, h: 78, fs: 18 } : 
                { w: 42, h: 60, fs: 14 };
@@ -594,10 +724,11 @@ const CardFace = React.forwardRef(function CardFace(
           height: dims.h,
           borderRadius: 6,
           background: "repeating-linear-gradient(135deg, #1B4332, #1B4332 6px, #133326 6px, #133326 12px)",
-          border: "2px solid #0d2419",
-          boxShadow: "0 2px 4px rgba(0,0,0,0.4)",
+          border: glowing ? "2px solid #E8B84B" : "2px solid #0d2419",
+          boxShadow: glowing ? "0 0 20px rgba(232,184,75,0.5), 0 0 40px rgba(232,184,75,0.2)" : "0 2px 4px rgba(0,0,0,0.4)",
           cursor: onClick ? "pointer" : "default",
           flexShrink: 0,
+          animation: bouncing ? 'bounce 1s ease-in-out infinite' : 'none',
         }}
       />
     );
@@ -616,7 +747,9 @@ const CardFace = React.forwardRef(function CardFace(
         borderRadius: 6,
         background: bg,
         border: selected ? "2px solid #E8B84B" : "1px solid rgba(0,0,0,0.25)",
-        boxShadow: selected ? "0 0 0 2px #E8B84B, 0 2px 8px rgba(0,0,0,0.35)" : "0 1px 4px rgba(0,0,0,0.3)",
+        boxShadow: glowing 
+          ? "0 0 20px rgba(232,184,75,0.5), 0 0 40px rgba(232,184,75,0.2), 0 4px 8px rgba(0,0,0,0.3)" 
+          : "0 1px 4px rgba(0,0,0,0.3)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -629,6 +762,9 @@ const CardFace = React.forwardRef(function CardFace(
         flexShrink: 0,
         touchAction: draggable ? "none" : "auto",
         userSelect: "none",
+        animation: bouncing ? 'bounce 1s ease-in-out infinite' : 'none',
+        transition: 'box-shadow 0.3s ease, transform 0.3s ease',
+        transform: glowing ? 'scale(1.05)' : 'scale(1)',
       }}
     >
       {label}
@@ -652,10 +788,12 @@ export default function Phase10App() {
   const [drag, setDrag] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [celebration, setCelebration] = useState(null);
+  const [showHelp, setShowHelp] = useState(false);
   const lastLogRef = useRef([]);
   const pollRef = useRef(null);
   const codeRef = useRef(null);
   const autoActedRef = useRef(false);
+  const turnSoundPlayedRef = useRef(false);
 
   // Real-time sync for multiplayer
   useEffect(() => {
@@ -674,6 +812,21 @@ export default function Phase10App() {
       unsubscribe?.();
     };
   }, [room?.code, room?.isSolo]);
+
+  // Play turn start sound when it becomes your turn
+  useEffect(() => {
+    const current = room?.players[room?.currentPlayerIndex];
+    if (current && current.id === myId && room?.status === "playing" && !turnSoundPlayedRef.current) {
+      turnSoundPlayedRef.current = true;
+      if (!isMuted) {
+        AudioManager.playTurnStartSound();
+      }
+    }
+    // Reset when turn changes
+    if (current && current.id !== myId) {
+      turnSoundPlayedRef.current = false;
+    }
+  }, [room?.currentPlayerIndex, room?.status, myId, isMuted]);
 
   // Play background music when game starts
   useEffect(() => {
@@ -762,6 +915,7 @@ export default function Phase10App() {
       turnStartedAt: null,
       log: [`${name.trim()} created the room.`],
       winnerId: null,
+      hasDrawn: false,
     };
     await saveRoom(newRoom);
     setRoom(newRoom);
@@ -825,6 +979,7 @@ export default function Phase10App() {
       turnState: "draw", 
       turnStartedAt: Date.now(),
       log: [...room.log, "Game started! Dealing 10 cards to each player."],
+      hasDrawn: false,
     };
     await saveRoom(updated);
     setRoom(updated);
@@ -876,6 +1031,7 @@ export default function Phase10App() {
       turnStartedAt: Date.now(),
       log: ["Solo game started — good luck!"], 
       winnerId: null,
+      hasDrawn: false,
     };
     setRoom(soloRoom);
     setMyId("you");
@@ -901,6 +1057,7 @@ export default function Phase10App() {
   const me = room?.players.find((p) => p.id === myId);
   const isMyTurn = room && (room.status === "playing") && room.players[room.currentPlayerIndex]?.id === myId;
   const phase = me ? PHASES[Math.min(me.phaseIndex, 9)] : null;
+  const hasDrawn = room?.hasDrawn || false;
 
   // Celebration detection
   useEffect(() => {
@@ -909,6 +1066,8 @@ export default function Phase10App() {
     const lastLog = logs[logs.length - 1];
     if (lastLog && lastLogRef.current !== lastLog) {
       lastLogRef.current = lastLog;
+      
+      // Check for phase completion
       if (lastLog.includes('laid down Phase')) {
         const playerName = lastLog.split(' laid down')[0];
         const isCurrentPlayer = room.isSolo || (me && playerName === me.name);
@@ -921,7 +1080,9 @@ export default function Phase10App() {
           setTimeout(() => setCelebration(null), 4000);
         }
       }
-      if (lastLog.includes('Round') && lastLog.includes('complete')) {
+      
+      // Check for round winner
+      if (lastLog.includes('WON ROUND')) {
         const roundWinner = room.players.find(p => p.hand && p.hand.length === 0);
         if (roundWinner) {
           const roundMatch = lastLog.match(/Round (\d+)/);
@@ -934,6 +1095,8 @@ export default function Phase10App() {
           setTimeout(() => setCelebration(null), 5000);
         }
       }
+      
+      // Check for game winner
       if (lastLog.includes('wins the game')) {
         const winnerMatch = lastLog.match(/(.+?) wins the game/);
         if (winnerMatch) {
@@ -951,15 +1114,33 @@ export default function Phase10App() {
   }, [room?.log, room?.isSolo, me?.name, room?.players]);
 
   function drawFrom(source) {
+    if (!isMyTurn || room?.turnState !== "draw") return;
     updateRoom((r) => resolveDraw(r, myId, source));
   }
 
   function layDownPhase() {
     if (!me || !phase) return;
+    if (!hasDrawn) {
+      setError("⚠️ You must draw a card first!");
+      setTimeout(() => setError(""), 2000);
+      return;
+    }
+    if (!isMyTurn) {
+      setError("⚠️ It's not your turn!");
+      setTimeout(() => setError(""), 2000);
+      return;
+    }
+    if (me.laidDownThisRound) {
+      setError("⚠️ You already laid down this round!");
+      setTimeout(() => setError(""), 2000);
+      return;
+    }
     const activeGroups = groups.slice(0, phase.reqs.length);
     const allValid = phase.reqs.every((req, i) => validateGroup(activeGroups[i] || [], req));
     if (!allValid) {
-      return setError("Those groups don't match the phase requirement yet.");
+      setError("⚠️ Groups don't match the phase requirement!");
+      setTimeout(() => setError(""), 2000);
+      return;
     }
     updateRoom((r) => resolveLayDown(r, myId, activeGroups));
     setGroups([[], []]);
@@ -971,6 +1152,11 @@ export default function Phase10App() {
   }
 
   function discardCard(cardId) {
+    if (!isMyTurn) {
+      setError("⚠️ It's not your turn!");
+      setTimeout(() => setError(""), 2000);
+      return;
+    }
     updateRoom((r) => resolveDiscard(r, myId, cardId));
     setGroups([[], []]);
   }
@@ -1038,7 +1224,8 @@ export default function Phase10App() {
   /* ---- drag & drop ---- */
 
   function beginDrag(e, card) {
-    if (!(isMyTurn && room.turnState === "action")) return;
+    // Allow drag anytime (even when not your turn) but only accept drops when it's your turn
+    if (!room || room.status !== "playing") return;
     e.preventDefault();
     setDrag({ cardId: card.id, card, x: e.clientX, y: e.clientY });
   }
@@ -1051,7 +1238,20 @@ export default function Phase10App() {
     function up(e) {
       const el = document.elementFromPoint(e.clientX, e.clientY);
       const zoneEl = el ? el.closest("[data-dropzone]") : null;
-      if (zoneEl) handleDrop(zoneEl.getAttribute("data-dropzone"), drag.card);
+      if (zoneEl) {
+        const zone = zoneEl.getAttribute("data-dropzone");
+        // Only allow drops on phase slots during your turn
+        if (zone.startsWith("group:") || zone.startsWith("hit:") || zone === "hand") {
+          if (isMyTurn) {
+            handleDrop(zone, drag.card);
+          } else {
+            setError("⚠️ You can only play on your turn!");
+            setTimeout(() => setError(""), 1500);
+          }
+        } else if (zone === "discard" && isMyTurn) {
+          handleDrop(zone, drag.card);
+        }
+      }
       setDrag(null);
     }
     window.addEventListener("pointermove", move);
@@ -1061,7 +1261,7 @@ export default function Phase10App() {
       window.removeEventListener("pointerup", up);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drag]);
+  }, [drag, isMyTurn]);
 
   function handleDrop(zoneKey, card) {
     if (zoneKey === "discard") {
@@ -1120,7 +1320,13 @@ export default function Phase10App() {
   if (screen === "home") {
     return (
       <div style={bgStyle}>
-        <style>{`@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap');`}</style>
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap');
+          @keyframes bounce {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-6px); }
+          }
+        `}</style>
         <div style={{ maxWidth: 360, margin: "20px auto", textAlign: "center" }}>
           <div style={{ fontSize: 36, fontWeight: 800, letterSpacing: 1, marginBottom: 2 }}>♫ OH UNNI</div>
           <div style={{ opacity: 0.7, marginBottom: 20, fontSize: 13 }}>Friends online, or solo vs computer</div>
@@ -1232,6 +1438,7 @@ export default function Phase10App() {
     const currentPlayer = room.players[room.currentPlayerIndex];
     const topDiscard = room.discard[room.discard.length - 1];
     const timerColor = timeRemaining <= 10 ? "#C4453E" : timeRemaining <= 20 ? "#D9A029" : "#7DBE8C";
+    const isMyTurnGlow = isMyTurn && room.status === "playing";
 
     return (
       <>
@@ -1242,6 +1449,7 @@ export default function Phase10App() {
             onClose={() => setCelebration(null)} 
           />
         )}
+        {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
         <div style={bgStyle}>
           {dragGhost}
           <div style={{ maxWidth: 650, margin: "0 auto" }}>
@@ -1254,6 +1462,7 @@ export default function Phase10App() {
                 {room.isSolo && <span style={{ fontSize: "10px", opacity: 0.5, background: "rgba(0,0,0,0.2)", padding: "1px 8px", borderRadius: "10px" }}>solo</span>}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <button onClick={() => setShowHelp(true)} style={{ background: "none", border: "1px solid rgba(244,233,201,0.2)", color: "#F4E9C9", borderRadius: "5px", padding: "2px 8px", fontSize: "14px", cursor: "pointer" }}>❓</button>
                 {room.status === "playing" && (
                   <div style={{ display: "flex", alignItems: "center", gap: "4px", background: "rgba(0,0,0,0.25)", borderRadius: "12px", padding: "2px 10px" }}>
                     <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: timerColor }} />
@@ -1280,18 +1489,21 @@ export default function Phase10App() {
                 const isActive = p.id === currentPlayer?.id && room.status === "playing";
                 return (
                   <div key={p.id} style={{
-                    background: isActive ? "rgba(232,184,75,0.15)" : "rgba(0,0,0,0.2)",
-                    border: isActive ? "1px solid #E8B84B" : "1px solid rgba(244,233,201,0.08)",
+                    background: isActive ? "rgba(232,184,75,0.25)" : "rgba(0,0,0,0.2)",
+                    border: isActive ? "2px solid #E8B84B" : "1px solid rgba(244,233,201,0.08)",
                     borderRadius: "6px",
                     padding: "3px 8px",
                     fontSize: "10px",
                     whiteSpace: "nowrap",
                     minWidth: "60px",
                     flex: "0 0 auto",
+                    boxShadow: isActive ? "0 0 20px rgba(232,184,75,0.3)" : "none",
+                    transition: "all 0.3s ease",
                   }}>
-                    <div style={{ fontWeight: 700, fontSize: "11px" }}>
+                    <div style={{ fontWeight: 700, fontSize: "11px", color: isActive ? "#E8B84B" : "#F4E9C9" }}>
                       {p.name}{p.id === myId ? "" : p.isBot ? " 🤖" : ""}
                       {p.id === myId && <span style={{ opacity: 0.5, fontSize: "8px", marginLeft: "2px" }}>you</span>}
+                      {isActive && <span style={{ marginLeft: "4px", fontSize: "10px" }}>🎯</span>}
                     </div>
                     <div style={{ opacity: 0.7, fontSize: "9px" }}>
                       Ph{Math.min(p.phaseIndex + 1, 10)} · {p.hand.length} cards
@@ -1310,32 +1522,52 @@ export default function Phase10App() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "16px", background: "rgba(0,0,0,0.15)", borderRadius: "10px", padding: "8px 12px", marginBottom: "8px" }}>
               <div style={{ textAlign: "center" }}>
                 <div style={{ fontSize: "8px", opacity: 0.5, marginBottom: "2px" }}>DECK ({room.deck.length})</div>
-                <CardFace faceDown size="sm" onClick={isMyTurn && room.turnState === "draw" ? () => drawFrom("deck") : undefined} />
+                <CardFace 
+                  faceDown 
+                  size="sm" 
+                  glowing={isMyTurnGlow}
+                  bouncing={isMyTurnGlow}
+                  onClick={isMyTurn && room.turnState === "draw" ? () => drawFrom("deck") : undefined} 
+                />
               </div>
               <div style={{ fontSize: "18px", opacity: 0.3 }}>→</div>
               <div style={{ textAlign: "center" }} data-dropzone="discard">
-                <div style={{ fontSize: "8px", opacity: 0.5, marginBottom: "2px" }}>DISCARD</div>
-                {topDiscard ? (
-                  <CardFace card={topDiscard} size="sm" onClick={isMyTurn && room.turnState === "draw" ? () => drawFrom("discard") : undefined} />
-                ) : (
-                  <div style={{ width: 32, height: 46, border: "1px dashed rgba(244,233,201,0.2)", borderRadius: "4px" }} />
-                )}
+                <div style={{ fontSize: "8px", opacity: 0.5, marginBottom: "2px" }}>
+                  DISCARD {isMyTurn && room.turnState === "action" ? "⬇️" : ""}
+                </div>
+                <CardFace 
+                  card={topDiscard} 
+                  size="sm" 
+                  glowing={isMyTurnGlow}
+                  bouncing={isMyTurnGlow}
+                  onClick={isMyTurn && room.turnState === "draw" ? () => drawFrom("discard") : undefined} 
+                />
               </div>
               {phase && room.status === "playing" && (
                 <div style={{ textAlign: "center", maxWidth: "120px" }}>
                   <div style={{ fontSize: "8px", opacity: 0.5 }}>PHASE {phase.id}</div>
                   <div style={{ fontSize: "10px", fontWeight: 700, lineHeight: "1.2" }}>{phase.label}</div>
+                  {me?.laidDownThisRound && (
+                    <div style={{ fontSize: "8px", color: "#7DBE8C", fontWeight: "bold" }}>✅ Done</div>
+                  )}
                 </div>
               )}
             </div>
 
             {/* Turn Status */}
             {room.status === "playing" && (
-              <div style={{ textAlign: "center", fontSize: "11px", opacity: 0.7, marginBottom: "6px" }}>
+              <div style={{ 
+                textAlign: "center", 
+                fontSize: "11px", 
+                opacity: 0.7, 
+                marginBottom: "6px",
+                color: isMyTurnGlow ? "#E8B84B" : "#F4E9C9",
+                fontWeight: isMyTurnGlow ? "bold" : "normal",
+              }}>
                 {isMyTurn
                   ? room.turnState === "draw"
-                    ? "Tap deck or discard to draw"
-                    : "Drag cards to phase slots or discard"
+                    ? "🎯 Tap deck or discard to draw!"
+                    : "🃏 Drag cards to phase slots or discard"
                   : `⏳ ${currentPlayer?.name}'s turn…`}
               </div>
             )}
@@ -1356,7 +1588,8 @@ export default function Phase10App() {
                             data-dropzone={`hit:${ownerId}:${gi}`}
                             style={{
                               display: "flex", gap: "2px", background: "rgba(0,0,0,0.1)", padding: "4px", borderRadius: "4px",
-                              border: canHitHere ? "1px dashed rgba(232,184,75,0.4)" : "1px dashed transparent",
+                              border: canHitHere ? "2px dashed rgba(232,184,75,0.5)" : "1px dashed transparent",
+                              boxShadow: canHitHere ? "0 0 15px rgba(232,184,75,0.15)" : "none",
                             }}
                           >
                             {g.cards.map((c) => <CardFace key={c.id} card={c} size="sm" />)}
@@ -1369,11 +1602,21 @@ export default function Phase10App() {
               </div>
             )}
 
-            {/* Phase Builder */}
-            {isMyTurn && room.turnState === "action" && me && !me.laidDownThisRound && phase && (
-              <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "8px", marginBottom: "8px" }}>
-                <div style={{ fontSize: "10px", opacity: 0.6, marginBottom: "6px" }}>
-                  🎯 Build Phase {phase.id}
+            {/* Phase Builder - ALWAYS VISIBLE */}
+            {phase && room.status === "playing" && (
+              <div style={{ 
+                background: "rgba(0,0,0,0.25)", 
+                borderRadius: "8px", 
+                padding: "8px", 
+                marginBottom: "8px",
+                border: isMyTurnGlow ? "1px solid #E8B84B" : "1px solid rgba(232,184,75,0.15)",
+                boxShadow: isMyTurnGlow ? "0 0 30px rgba(232,184,75,0.1)" : "none",
+              }}>
+                <div style={{ fontSize: "10px", opacity: 0.6, marginBottom: "6px", display: "flex", justifyContent: "space-between" }}>
+                  <span>🎯 Build Phase {phase.id}</span>
+                  <span style={{ fontSize: "9px" }}>
+                    {me?.laidDownThisRound ? "✅ Completed" : hasDrawn ? "🃏 Drawn - Ready!" : "⏳ Draw first!"}
+                  </span>
                 </div>
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                   {phase.reqs.map((req, i) => (
@@ -1382,7 +1625,8 @@ export default function Phase10App() {
                       data-dropzone={`group:${i}`}
                       style={{
                         background: "rgba(0,0,0,0.15)", borderRadius: "6px", padding: "4px", minWidth: "100px", flex: "1",
-                        border: "1px dashed rgba(232,184,75,0.3)",
+                        border: isMyTurnGlow ? "2px dashed rgba(232,184,75,0.4)" : "1px dashed rgba(232,184,75,0.15)",
+                        transition: "all 0.3s ease",
                       }}
                     >
                       <div style={{ fontSize: "8px", opacity: 0.5, marginBottom: "2px" }}>
@@ -1397,30 +1641,74 @@ export default function Phase10App() {
                     </div>
                   ))}
                 </div>
-                <div style={{ display: "flex", gap: "6px", marginTop: "6px" }}>
-                  <button onClick={layDownPhase} style={{ padding: "4px 12px", borderRadius: "6px", border: "none", background: "#E8B84B", color: "#1B4332", fontWeight: 700, fontSize: "11px", cursor: "pointer" }}>
+                <div style={{ display: "flex", gap: "6px", marginTop: "6px", alignItems: "center" }}>
+                  <button 
+                    onClick={layDownPhase} 
+                    disabled={!isMyTurn || !hasDrawn || me?.laidDownThisRound}
+                    style={{ 
+                      padding: "4px 12px", 
+                      borderRadius: "6px", 
+                      border: "none", 
+                      background: (!isMyTurn || !hasDrawn || me?.laidDownThisRound) ? "#5a5a4a" : "#E8B84B", 
+                      color: (!isMyTurn || !hasDrawn || me?.laidDownThisRound) ? "#888" : "#1B4332", 
+                      fontWeight: 700, 
+                      fontSize: "11px", 
+                      cursor: (!isMyTurn || !hasDrawn || me?.laidDownThisRound) ? "default" : "pointer",
+                      opacity: (!isMyTurn || !hasDrawn || me?.laidDownThisRound) ? 0.5 : 1,
+                    }}
+                  >
                     ✅ Confirm
                   </button>
-                  <button onClick={() => setGroups([[], []])} style={{ padding: "4px 12px", borderRadius: "6px", border: "1px solid rgba(244,233,201,0.3)", background: "transparent", color: "#F4E9C9", fontSize: "11px", cursor: "pointer" }}>
+                  <button 
+                    onClick={() => setGroups([[], []])} 
+                    style={{ 
+                      padding: "4px 12px", 
+                      borderRadius: "6px", 
+                      border: "1px solid rgba(244,233,201,0.3)", 
+                      background: "transparent", 
+                      color: "#F4E9C9", 
+                      fontSize: "11px", 
+                      cursor: "pointer" 
+                    }}
+                  >
                     Clear
                   </button>
+                  {!isMyTurn && <span style={{ fontSize: "9px", opacity: 0.5 }}>⏳ Wait for your turn</span>}
+                  {isMyTurn && !hasDrawn && <span style={{ fontSize: "9px", color: "#E8B84B" }}>⚠️ Draw a card first!</span>}
+                  {isMyTurn && hasDrawn && me?.laidDownThisRound && <span style={{ fontSize: "9px", color: "#7DBE8C" }}>✅ Phase laid down!</span>}
                 </div>
                 {error && <div style={{ marginTop: "4px", color: "#F2A5A0", fontSize: "10px" }}>{error}</div>}
               </div>
             )}
 
-            {/* Hand */}
+            {/* Hand - with glow/bounce when it's your turn */}
             {me && (
               <div style={{ marginTop: "6px" }} data-dropzone="hand">
-                <div style={{ fontSize: "10px", opacity: 0.5, marginBottom: "4px" }}>Your hand ({me.hand.length})</div>
-                <div style={{ display: "flex", gap: "3px", flexWrap: "wrap", justifyContent: "center", background: "rgba(0,0,0,0.1)", borderRadius: "8px", padding: "6px", minHeight: "50px" }}>
+                <div style={{ fontSize: "10px", opacity: 0.5, marginBottom: "4px" }}>
+                  Your hand ({me.hand.length})
+                  {isMyTurnGlow && <span style={{ marginLeft: "8px", color: "#E8B84B" }}>✨ Your turn!</span>}
+                </div>
+                <div style={{ 
+                  display: "flex", 
+                  gap: "3px", 
+                  flexWrap: "wrap", 
+                  justifyContent: "center", 
+                  background: isMyTurnGlow ? "rgba(232,184,75,0.08)" : "rgba(0,0,0,0.1)", 
+                  borderRadius: "8px", 
+                  padding: "6px", 
+                  minHeight: "50px",
+                  boxShadow: isMyTurnGlow ? "0 0 40px rgba(232,184,75,0.08)" : "none",
+                  transition: "all 0.5s ease",
+                }}>
                   {me.hand.slice().sort((a, b) => (a.number || 99) - (b.number || 99)).map((c) => (
                     <CardFace
                       key={c.id}
                       card={c}
                       size="sm"
                       dim={inAnyGroup(c.id) || (drag?.cardId === c.id)}
-                      draggable={isMyTurn && room.turnState === "action"}
+                      draggable={true} // Always draggable for pre-building
+                      glowing={isMyTurnGlow}
+                      bouncing={isMyTurnGlow}
                       onPointerDownDrag={(e) => beginDrag(e, c)}
                     />
                   ))}
