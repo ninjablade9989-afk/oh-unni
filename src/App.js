@@ -1800,7 +1800,7 @@ export default function Phase10App() {
         }
       }
     }
-  }, [room, room?.log, room?.isSolo, me?.name]);
+  }, [room, room?.log, room?.isSolo, me?.name,me]);
 
   function drawFrom(source) {
     if (!isMyTurn || room?.turnState !== "draw") return;
