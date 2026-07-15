@@ -16,6 +16,8 @@ import { subscribeToRoom } from './supabase';
    - Difficulty levels (Easy/Medium/Hard)
    - Multiplayer chat
    - Card dealing animations
+   - Round completion notification with new game option
+   - Random phase allocation for new games
 --------------------------------------------------------------- */
 
 // Audio Manager
@@ -192,6 +194,119 @@ const AudioManager = {
     }
   }
 };
+
+// Round Complete Modal Component
+function RoundCompleteModal({ winnerName, roundNumber, onNewGame, onExit }) {
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0,0,0,0.85)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 10002,
+      animation: 'fadeIn 0.3s ease-out',
+    }}>
+      <div style={{
+        background: 'linear-gradient(135deg, #1F5C42, #0F3D2E)',
+        padding: '40px',
+        borderRadius: '20px',
+        maxWidth: '450px',
+        width: '90%',
+        textAlign: 'center',
+        border: '3px solid #E8B84B',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.8)',
+        animation: 'slideUp 0.5s ease-out',
+      }}>
+        <div style={{ fontSize: '60px', marginBottom: '10px' }}>
+          🏆
+        </div>
+        <div style={{ 
+          fontSize: '28px', 
+          fontWeight: 'bold', 
+          color: '#E8B84B',
+          marginBottom: '8px',
+        }}>
+          Round {roundNumber} Complete!
+        </div>
+        <div style={{ 
+          fontSize: '20px', 
+          color: '#F4E9C9',
+          marginBottom: '20px',
+        }}>
+          🎉 {winnerName} wins the round! 🎉
+        </div>
+        
+        <div style={{ 
+          fontSize: '14px', 
+          color: '#F4E9C9',
+          opacity: 0.8,
+          marginBottom: '25px',
+          padding: '10px',
+          background: 'rgba(0,0,0,0.2)',
+          borderRadius: '8px',
+        }}>
+          Would you like to continue playing with a new phase setup?
+        </div>
+        
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+          <button
+            onClick={onNewGame}
+            style={{
+              padding: '12px 30px',
+              borderRadius: '10px',
+              border: 'none',
+              background: '#E8B84B',
+              color: '#1B4332',
+              fontWeight: 'bold',
+              fontSize: '16px',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              flex: 1,
+            }}
+            onMouseEnter={(e) => e.target.style.transform = 'scale(1.05)'}
+            onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+          >
+            🔄 New Phase Game
+          </button>
+          <button
+            onClick={onExit}
+            style={{
+              padding: '12px 30px',
+              borderRadius: '10px',
+              border: '2px solid #E8B84B',
+              background: 'transparent',
+              color: '#F4E9C9',
+              fontWeight: 'bold',
+              fontSize: '16px',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              flex: 1,
+            }}
+            onMouseEnter={(e) => e.target.style.background = 'rgba(232,184,75,0.1)'}
+            onMouseLeave={(e) => e.target.style.background = 'transparent'}
+          >
+            🚪 Exit Game
+          </button>
+        </div>
+      </div>
+      <style>{`
+        @keyframes fadeIn {
+          0% { opacity: 0; }
+          100% { opacity: 1; }
+        }
+        @keyframes slideUp {
+          0% { transform: translateY(50px); opacity: 0; }
+          100% { transform: translateY(0); opacity: 1; }
+        }
+      `}</style>
+    </div>
+  );
+}
 
 // Help Modal Component
 function HelpModal({ onClose }) {
@@ -1140,11 +1255,107 @@ export default function Phase10App() {
   const [chatMessages, setChatMessages] = useState([]);
   const [showChat, setShowChat] = useState(false);
   const [dealAnimation, setDealAnimation] = useState(false);
+  const [showRoundComplete, setShowRoundComplete] = useState(false);
+  const [roundWinner, setRoundWinner] = useState(null);
+  const [roundNumber, setRoundNumber] = useState(1);
   const lastLogRef = useRef([]);
   const pollRef = useRef(null);
   const codeRef = useRef(null);
   const autoActedRef = useRef(false);
   const turnSoundPlayedRef = useRef(false);
+
+  // Function to randomize phase assignments for all players
+  function randomizePhases(players) {
+    // Create a shuffled array of phase indices (0-9)
+    const phaseIndices = Array.from({ length: 10 }, (_, i) => i);
+    const shuffled = shuffle(phaseIndices);
+    
+    // Assign random phases to players
+    return players.map((p, index) => ({
+      ...p,
+      phaseIndex: shuffled[index % shuffled.length],
+      laidDownThisRound: false,
+      hand: [],
+      score: p.score || 0, // Keep existing score
+    }));
+  }
+
+  // Function to handle new phase game
+  function handleNewPhaseGame() {
+    if (!room) return;
+    
+    // Get current players
+    const currentPlayers = room.players.map(p => ({
+      ...p,
+      score: p.score || 0,
+    }));
+    
+    // Randomize phase assignments
+    const randomizedPlayers = randomizePhases(currentPlayers);
+    
+    // Create a fresh deck
+    const deck = makeDeck();
+    
+    // Deal 10 cards to each player
+    for (let i = 0; i < 10; i++) {
+      for (const p of randomizedPlayers) {
+        p.hand.push(deck.pop());
+      }
+    }
+    
+    const discard = [deck.pop()];
+    
+    // Update room with new game state
+    const updatedRoom = {
+      ...room,
+      players: randomizedPlayers,
+      deck,
+      discard,
+      round: room.round + 1,
+      currentPlayerIndex: 0,
+      table: {},
+      skipNext: false,
+      turnState: "draw",
+      turnStartedAt: Date.now(),
+      status: "playing",
+      hasDrawn: false,
+      roundWinner: null,
+      log: [`🔄 New phase game started! Random phase assignments for all players.`],
+      chatMessages: room.chatMessages || [],
+    };
+    
+    // Add log entries for each player's new phase
+    randomizedPlayers.forEach(p => {
+      updatedRoom.log.push(`🎯 ${p.name} is on Phase ${p.phaseIndex + 1}: ${PHASES[p.phaseIndex].label}`);
+    });
+    
+    // Save and update room
+    if (room.isSolo) {
+      setRoom(updatedRoom);
+    } else {
+      saveRoom(updatedRoom);
+      setRoom(updatedRoom);
+    }
+    
+    // Reset states
+    setShowRoundComplete(false);
+    setRoundWinner(null);
+    setGroups([[], []]);
+    setError("");
+    setHints([]);
+    setShowHints(false);
+    setUndoStack([]);
+    
+    // Play sound
+    AudioManager.playDealSound();
+  }
+
+  // Function to handle exit game
+  function handleExitGame() {
+    setShowRoundComplete(false);
+    setRoundWinner(null);
+    leaveRoom();
+  }
 
   // Real-time sync for multiplayer
   useEffect(() => {
@@ -1165,7 +1376,7 @@ export default function Phase10App() {
     return () => {
       unsubscribe?.();
     };
-  }, [room?.code, room?.isSolo]);
+  }, [room, room?.code, room?.isSolo]);
 
   // Play turn start sound when it becomes your turn
   useEffect(() => {
@@ -1179,7 +1390,7 @@ export default function Phase10App() {
     if (current && current.id !== myId) {
       turnSoundPlayedRef.current = false;
     }
-  }, [room?.currentPlayerIndex, room?.status, myId, isMuted]);
+  }, [room?.players, room?.currentPlayerIndex, room?.status, myId, isMuted]);
 
   // Play background music when game starts
   useEffect(() => {
@@ -1206,7 +1417,7 @@ export default function Phase10App() {
       AudioManager.playDealSound();
       setTimeout(() => setDealAnimation(false), 1000);
     }
-  }, [room?.round, room?.status]);
+  }, [room?.round, room?.status, room?.turnState]);
 
   useEffect(() => {
     (async () => {
@@ -1326,6 +1537,8 @@ export default function Phase10App() {
     setGroups([[], []]);
     setScreen("home");
     AudioManager.stopBackgroundMusic();
+    setShowRoundComplete(false);
+    setRoundWinner(null);
   }
 
   async function startGame() {
@@ -1435,7 +1648,7 @@ export default function Phase10App() {
   const phase = me ? PHASES[Math.min(me.phaseIndex, 9)] : null;
   const hasDrawn = room?.hasDrawn || false;
 
-  // Celebration detection
+  // Celebration detection - Updated to show round complete modal
   useEffect(() => {
     if (!room || !room.log) return;
     const logs = room.log;
@@ -1456,9 +1669,7 @@ export default function Phase10App() {
           AudioManager.playPhaseCompleteSound();
           setTimeout(() => setCelebration(null), 4000);
         }
-      }
-      
-      if (lastLog.includes('WON ROUND')) {
+      } else if (lastLog.includes('WON ROUND')) {
         console.log('🎯 Round winner detected!');
         const parts = lastLog.split(' ');
         let winnerName = null;
@@ -1484,10 +1695,15 @@ export default function Phase10App() {
           });
           AudioManager.playPhaseCompleteSound();
           setTimeout(() => setCelebration(null), 5000);
+          
+          // Show round complete modal after celebration
+          setTimeout(() => {
+            setRoundWinner(winnerName);
+            setRoundNumber(parseInt(roundNum) || room.round);
+            setShowRoundComplete(true);
+          }, 3000);
         }
-      }
-      
-      if (lastLog.includes('WINS THE GAME')) {
+      } else if (lastLog.includes('WINS THE GAME')) {
         const parts = lastLog.split(' ');
         let winnerName = null;
         for (let i = 0; i < parts.length; i++) {
@@ -1506,10 +1722,17 @@ export default function Phase10App() {
           AudioManager.playWinSound();
           AudioManager.stopBackgroundMusic();
           setTimeout(() => setCelebration(null), 6000);
+          
+          // Show game win modal after celebration
+          setTimeout(() => {
+            setRoundWinner(winnerName);
+            setRoundNumber(room.round);
+            setShowRoundComplete(true);
+          }, 4000);
         }
       }
     }
-  }, [room?.log, room?.isSolo, me?.name]);
+  }, [room, room?.log, room?.isSolo, me?.name]);
 
   function drawFrom(source) {
     if (!isMyTurn || room?.turnState !== "draw") return;
@@ -1668,7 +1891,7 @@ export default function Phase10App() {
     if (!room || room.status !== "playing") return;
     const iv = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(iv);
-  }, [room?.status]);
+  }, [room, room?.status]);
 
   useEffect(() => {
     autoActedRef.current = false;
@@ -1931,6 +2154,17 @@ export default function Phase10App() {
 
     return (
       <>
+        {/* Show round complete modal */}
+        {showRoundComplete && roundWinner && (
+          <RoundCompleteModal
+            winnerName={roundWinner}
+            roundNumber={roundNumber}
+            onNewGame={handleNewPhaseGame}
+            onExit={handleExitGame}
+          />
+        )}
+        
+        {/* Show celebration */}
         {celebration && (
           <Celebration 
             message={celebration.message} 
@@ -1938,6 +2172,7 @@ export default function Phase10App() {
             onClose={() => setCelebration(null)} 
           />
         )}
+        
         {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
         {showHints && hints.length > 0 && (
           <div style={{
