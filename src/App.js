@@ -18,14 +18,6 @@ import { subscribeToRoom } from './supabase';
    - Card dealing animations
    - Round completion notification with new game option
    - Random phase allocation for new games
-   - Fixed: Empty deck handling
-   - Fixed: Bot getting stuck
-   - Fixed: Double turn issues
-   - Fixed: Group validation on drag
-   - Fixed: Undo stack overflow
-   - Fixed: Phase index out of bounds
-   - Fixed: Turn timer when deck empty
-   - Fixed: Hit all cards ends round
 --------------------------------------------------------------- */
 
 // Audio Manager
@@ -848,11 +840,6 @@ function resolveDraw(r, playerId, source) {
   let card;
   if (source === "deck") {
     if (deck.length === 0) {
-      // Fix: Check if we have enough cards to reshuffle
-      if (discard.length <= 1) {
-        // Not enough cards - game is stuck, skip draw
-        return r;
-      }
       const keep = discard[discard.length - 1];
       deck = shuffle(discard.slice(0, -1));
       discard = [keep];
@@ -954,77 +941,9 @@ function resolveHit(r, playerId, cardId, ownerId, groupIdx) {
   if (!card) return r;
   const targetGroup = r.table[ownerId] && r.table[ownerId][groupIdx];
   if (!canHit(card, targetGroup)) return r;
-  
   const table = { ...r.table };
-  table[ownerId] = table[ownerId].map((g, i) => 
-    (i === groupIdx ? { ...g, cards: [...g.cards, card] } : g)
-  );
-  
-  let players = r.players.map((p) => 
-    (p.id === playerId ? { ...p, hand: p.hand.filter((c) => c.id !== cardId) } : p)
-  );
-  
-  // CHECK: Does the player have no cards left after hitting?
-  const updatedPlayer = players.find((p) => p.id === playerId);
-  if (updatedPlayer && updatedPlayer.hand.length === 0) {
-    // Player has no cards left - they win the round!
-    AudioManager.playWinSound();
-    
-    // Calculate scores
-    const results = players.map((p) => {
-      if (p.id === playerId) {
-        return { ...p, phaseIndex: p.laidDownThisRound ? Math.min(p.phaseIndex + 1, 10) : p.phaseIndex };
-      }
-      const roundScore = p.hand.reduce((s, c) => s + cardScore(c), 0);
-      return { ...p, score: p.score + roundScore, phaseIndex: p.laidDownThisRound ? Math.min(p.phaseIndex + 1, 10) : p.phaseIndex };
-    });
-    
-    const finished = results.some((p) => p.phaseIndex >= 10);
-    let log = [...r.log, `${updatedPlayer.name} hit all their cards and won the round!`];
-    
-    if (finished) {
-      const winner = results.slice().sort((a, b) => a.score - b.score)[0];
-      log.push(`🏆 ${winner.name} WINS THE GAME! 🏆`);
-      AudioManager.playWinSound();
-      AudioManager.stopBackgroundMusic();
-      return { 
-        ...r, 
-        players: results.map((p) => ({ ...p, laidDownThisRound: false })), 
-        table, 
-        status: "gameOver", 
-        winnerId: winner.id, 
-        log,
-        hasDrawn: false,
-        chatMessages: r.chatMessages || [],
-      };
-    }
-    
-    // Deal new round
-    const deck = makeDeck();
-    const dealt = results.map((p) => ({ ...p, hand: [], laidDownThisRound: false }));
-    for (let i = 0; i < 10; i++) for (const p of dealt) p.hand.push(deck.pop());
-    const newDiscard = [deck.pop()];
-    AudioManager.playDealSound();
-    log.push(`${updatedPlayer.name} WON ROUND ${r.round}!`);
-    log.push(`Round ${r.round} complete — dealing round ${r.round + 1}.`);
-    
-    return {
-      ...r,
-      players: dealt,
-      deck,
-      discard: newDiscard,
-      table: {},
-      round: r.round + 1,
-      currentPlayerIndex: (r.currentPlayerIndex + 1) % r.players.length,
-      turnState: "draw",
-      turnStartedAt: Date.now(),
-      log,
-      hasDrawn: false,
-      chatMessages: r.chatMessages || [],
-      roundWinner: updatedPlayer.name,
-    };
-  }
-  
+  table[ownerId] = table[ownerId].map((g, i) => (i === groupIdx ? { ...g, cards: [...g.cards, card] } : g));
+  const players = r.players.map((p) => (p.id === playerId ? { ...p, hand: p.hand.filter((c) => c.id !== cardId) } : p));
   return { ...r, players, table };
 }
 
@@ -1088,20 +1007,14 @@ function resolveDiscard(r, playerId, cardId) {
   }
 
   let nextIdx = (r.currentPlayerIndex + 1) % r.players.length;
-  let skipNext = r.skipNext || false;
-  
-  // Fix: Handle skip cards properly
+  let skipNext = r.skipNext;
   if (card.kind === "skip") {
     log.push(`${player.name} played a Skip — next player loses a turn!`);
     skipNext = true;
   }
-  
-  // Apply skip if needed
   if (skipNext) {
-    // Skip the next player
     nextIdx = (nextIdx + 1) % r.players.length;
     skipNext = false;
-    log.push(`⏭️ ${r.players[nextIdx].name} lost their turn!`);
   }
   
   return { 
@@ -1227,14 +1140,9 @@ function botPlayTurn(r0, playerId, difficulty = "medium") {
       const sorted = [...pFinal.hand].sort((a, b) => cardScore(b) - cardScore(a));
       target = sorted[0];
     }
-    // Fix: Bot always discards something, even if target is undefined
     if (target) {
       console.log('🤖 Bot discarding card');
       r = resolveDiscard(r, playerId, target.id);
-    } else if (pFinal.hand.length > 0) {
-      // Emergency fallback - discard the first card
-      console.log('🤖 Bot using emergency discard');
-      r = resolveDiscard(r, playerId, pFinal.hand[0].id);
     }
   }
   
@@ -1358,32 +1266,46 @@ export default function Phase10App() {
 
   // Function to randomize phase assignments for all players
   function randomizePhases(players) {
+    // Create a shuffled array of phase indices (0-9)
     const phaseIndices = Array.from({ length: 10 }, (_, i) => i);
     const shuffled = shuffle(phaseIndices);
+    
+    // Assign random phases to players
     return players.map((p, index) => ({
       ...p,
       phaseIndex: shuffled[index % shuffled.length],
       laidDownThisRound: false,
       hand: [],
-      score: p.score || 0,
+      score: p.score || 0, // Keep existing score
     }));
   }
 
   // Function to handle new phase game
   function handleNewPhaseGame() {
     if (!room) return;
+    
+    // Get current players
     const currentPlayers = room.players.map(p => ({
       ...p,
       score: p.score || 0,
     }));
+    
+    // Randomize phase assignments
     const randomizedPlayers = randomizePhases(currentPlayers);
+    
+    // Create a fresh deck
     const deck = makeDeck();
+    
+    // Deal 10 cards to each player
     for (let i = 0; i < 10; i++) {
       for (const p of randomizedPlayers) {
         p.hand.push(deck.pop());
       }
     }
+    
     const discard = [deck.pop()];
+    
+    // Update room with new game state
     const updatedRoom = {
       ...room,
       players: randomizedPlayers,
@@ -1401,15 +1323,21 @@ export default function Phase10App() {
       log: [`🔄 New phase game started! Random phase assignments for all players.`],
       chatMessages: room.chatMessages || [],
     };
+    
+    // Add log entries for each player's new phase
     randomizedPlayers.forEach(p => {
       updatedRoom.log.push(`🎯 ${p.name} is on Phase ${p.phaseIndex + 1}: ${PHASES[p.phaseIndex].label}`);
     });
+    
+    // Save and update room
     if (room.isSolo) {
       setRoom(updatedRoom);
     } else {
       saveRoom(updatedRoom);
       setRoom(updatedRoom);
     }
+    
+    // Reset states
     setShowRoundComplete(false);
     setRoundWinner(null);
     setGroups([[], []]);
@@ -1417,6 +1345,8 @@ export default function Phase10App() {
     setHints([]);
     setShowHints(false);
     setUndoStack([]);
+    
+    // Play sound
     AudioManager.playDealSound();
   }
 
@@ -1766,6 +1696,7 @@ export default function Phase10App() {
           AudioManager.playPhaseCompleteSound();
           setTimeout(() => setCelebration(null), 5000);
           
+          // Show round complete modal after celebration
           setTimeout(() => {
             setRoundWinner(winnerName);
             setRoundNumber(parseInt(roundNum) || room.round);
@@ -1792,6 +1723,7 @@ export default function Phase10App() {
           AudioManager.stopBackgroundMusic();
           setTimeout(() => setCelebration(null), 6000);
           
+          // Show game win modal after celebration
           setTimeout(() => {
             setRoundWinner(winnerName);
             setRoundNumber(room.round);
@@ -1800,16 +1732,11 @@ export default function Phase10App() {
         }
       }
     }
-  }, [room, room?.log, room?.isSolo, me?.name,me]);
+  }, [room, room?.log, room?.isSolo, me?.name]);
 
   function drawFrom(source) {
     if (!isMyTurn || room?.turnState !== "draw") return;
-    // Limit undo stack to 20 moves
-    const newUndoStack = [...undoStack, { groups: groups.map(g => [...g]) }];
-    if (newUndoStack.length > 20) {
-      newUndoStack.shift();
-    }
-    setUndoStack(newUndoStack);
+    setUndoStack([...undoStack, { groups: groups.map(g => [...g]) }]);
     updateRoom((r) => resolveDraw(r, myId, source));
   }
 
@@ -1837,12 +1764,7 @@ export default function Phase10App() {
       setTimeout(() => setError(""), 2000);
       return;
     }
-    // Limit undo stack to 20 moves
-    const newUndoStack = [...undoStack, { groups: groups.map(g => [...g]) }];
-    if (newUndoStack.length > 20) {
-      newUndoStack.shift();
-    }
-    setUndoStack(newUndoStack);
+    setUndoStack([...undoStack, { groups: groups.map(g => [...g]) }]);
     updateRoom((r) => resolveLayDown(r, myId, activeGroups));
     setGroups([[], []]);
     setError("");
@@ -1851,12 +1773,7 @@ export default function Phase10App() {
   }
 
   function hitCard(cardId, ownerId, groupIdx) {
-    // Limit undo stack to 20 moves
-    const newUndoStack = [...undoStack, { groups: groups.map(g => [...g]) }];
-    if (newUndoStack.length > 20) {
-      newUndoStack.shift();
-    }
-    setUndoStack(newUndoStack);
+    setUndoStack([...undoStack, { groups: groups.map(g => [...g]) }]);
     updateRoom((r) => resolveHit(r, myId, cardId, ownerId, groupIdx));
   }
 
@@ -1871,12 +1788,7 @@ export default function Phase10App() {
       setTimeout(() => setError(""), 2000);
       return;
     }
-    // Limit undo stack to 20 moves
-    const newUndoStack = [...undoStack, { groups: groups.map(g => [...g]) }];
-    if (newUndoStack.length > 20) {
-      newUndoStack.shift();
-    }
-    setUndoStack(newUndoStack);
+    setUndoStack([...undoStack, { groups: groups.map(g => [...g]) }]);
     updateRoom((r) => resolveDiscard(r, myId, cardId));
     setError("");
     setHints([]);
@@ -1886,20 +1798,7 @@ export default function Phase10App() {
   function autoEndTurn() {
     updateRoom((r) => {
       let rr = r;
-      if (rr.turnState === "draw") {
-        // Try to draw, but if deck is empty, just end turn
-        const drawResult = resolveDraw(rr, myId, "deck");
-        if (drawResult !== rr) {
-          rr = drawResult;
-        } else {
-          // If can't draw, force discard
-          const player = rr.players.find((p) => p.id === myId);
-          if (player && player.hand.length > 0) {
-            return resolveDiscard(rr, myId, player.hand[0].id);
-          }
-          return rr;
-        }
-      }
+      if (rr.turnState === "draw") rr = resolveDraw(rr, myId, "deck");
       const player = rr.players.find((p) => p.id === myId);
       if (!player || player.hand.length === 0) return rr;
       const nonWild = player.hand.filter((c) => c.kind !== "wild");
@@ -1914,11 +1813,7 @@ export default function Phase10App() {
   }
 
   function clearAllGroups() {
-    const newUndoStack = [...undoStack, { groups: groups.map(g => [...g]) }];
-    if (newUndoStack.length > 20) {
-      newUndoStack.shift();
-    }
-    setUndoStack(newUndoStack);
+    setUndoStack([...undoStack, { groups: groups.map(g => [...g]) }]);
     setGroups([[], []]);
     setHints([]);
     setShowHints(false);
@@ -2070,16 +1965,7 @@ export default function Phase10App() {
         const copy = g.map((a) => a.slice());
         const already = copy.some((arr) => arr.some((c) => c.id === card.id));
         if (already) copy.forEach((arr, i) => (copy[i] = arr.filter((c) => c.id !== card.id)));
-        // Fix: Validate the group before adding
-        if (copy[idx].length < phase.reqs[idx].count) {
-          const testGroup = [...copy[idx], card];
-          if (validateGroup(testGroup, phase.reqs[idx])) {
-            copy[idx].push(card);
-          } else {
-            setError("⚠️ This card doesn't fit in this group!");
-            setTimeout(() => setError(""), 1500);
-          }
-        }
+        if (copy[idx].length < phase.reqs[idx].count) copy[idx].push(card);
         return copy;
       });
       return;
