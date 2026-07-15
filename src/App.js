@@ -16,68 +16,18 @@ import { subscribeToRoom } from './supabase';
    - Difficulty levels (Easy/Medium/Hard)
    - Multiplayer chat
    - Card dealing animations
-   - Random Phases
-   - Random Music Tracks
 --------------------------------------------------------------- */
 
-// Random Music Tracks
-const MUSIC_TRACKS = [
-  // Track 1: Classic
-  {
-    name: "🎵 Classic",
-    notes: [523, 587, 659, 784, 880, 988, 1047],
-    durations: [0.3, 0.3, 0.3, 0.4, 0.3, 0.3, 0.6],
-    tempo: 0.25,
-  },
-  // Track 2: Chill
-  {
-    name: "🎵 Chill",
-    notes: [392, 440, 493, 523, 440, 493, 523, 587],
-    durations: [0.4, 0.4, 0.4, 0.6, 0.4, 0.4, 0.4, 0.6],
-    tempo: 0.3,
-  },
-  // Track 3: Energetic
-  {
-    name: "🎵 Energetic",
-    notes: [659, 784, 880, 784, 880, 988, 784, 880, 988, 1047],
-    durations: [0.2, 0.2, 0.3, 0.2, 0.2, 0.3, 0.2, 0.2, 0.3, 0.4],
-    tempo: 0.15,
-  },
-  // Track 4: Relaxing
-  {
-    name: "🎵 Relaxing",
-    notes: [261, 293, 329, 392, 440, 493, 392, 329],
-    durations: [0.5, 0.5, 0.5, 0.7, 0.5, 0.5, 0.5, 0.7],
-    tempo: 0.4,
-  },
-  // Track 5: Upbeat
-  {
-    name: "🎵 Upbeat",
-    notes: [523, 523, 587, 587, 659, 659, 784, 784, 880, 880, 988, 988, 1047],
-    durations: [0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.2, 0.15, 0.15, 0.15, 0.15, 0.2, 0.4],
-    tempo: 0.12,
-  },
-];
-
-// Audio Manager with Random Music
+// Audio Manager
 const AudioManager = {
   context: null,
   musicPlaying: false,
-  currentTrack: null,
-  trackIndex: 0,
-  timeoutId: null,
   
   init() {
     if (!this.context) {
       this.context = new (window.AudioContext || window.webkitAudioContext)();
     }
     return this.context;
-  },
-  
-  getRandomTrack() {
-    const track = MUSIC_TRACKS[Math.floor(Math.random() * MUSIC_TRACKS.length)];
-    this.currentTrack = track;
-    return track;
   },
   
   playDrawSound() {
@@ -196,18 +146,16 @@ const AudioManager = {
     if (this.musicPlaying) return;
     try {
       this.musicPlaying = true;
-      this.getRandomTrack();
-      console.log('🎵 Playing:', this.currentTrack.name);
       this.playMusicLoop();
     } catch (e) {}
   },
   
   playMusicLoop() {
-    if (!this.musicPlaying || !this.currentTrack) return;
+    if (!this.musicPlaying) return;
     try {
       const ctx = this.init();
-      const { notes, durations, tempo } = this.currentTrack;
-      
+      const notes = [261, 293, 329, 392, 440, 493, 523];
+      const durations = [0.3, 0.3, 0.3, 0.4, 0.3, 0.3, 0.6];
       notes.forEach((freq, i) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -215,30 +163,23 @@ const AudioManager = {
         gain.connect(ctx.destination);
         osc.frequency.value = freq;
         osc.type = 'sine';
-        const startTime = ctx.currentTime + i * tempo;
+        const startTime = ctx.currentTime + i * 0.25;
         gain.gain.setValueAtTime(0.03, startTime);
         gain.gain.exponentialRampToValueAtTime(0.001, startTime + durations[i]);
         osc.start(startTime);
         osc.stop(startTime + durations[i]);
       });
-      
-      const totalDuration = notes.length * tempo + 0.6;
-      this.timeoutId = setTimeout(() => {
+      const totalDuration = notes.length * 0.25 + 0.6;
+      setTimeout(() => {
         if (this.musicPlaying) {
-          this.getRandomTrack();
-          console.log('🎵 Now playing:', this.currentTrack.name);
           this.playMusicLoop();
         }
-      }, totalDuration * 1000 + 1000);
+      }, totalDuration * 1000 + 500);
     } catch (e) {}
   },
   
   stopBackgroundMusic() {
     this.musicPlaying = false;
-    if (this.timeoutId) {
-      clearTimeout(this.timeoutId);
-      this.timeoutId = null;
-    }
   },
   
   toggleMute() {
@@ -603,30 +544,6 @@ function cardScore(card) {
   return 10;
 }
 
-/* ---------- Phase Deck with Random Phases ---------- */
-
-function createPhaseDeck() {
-  const deck = [];
-  PHASES.forEach((phase, index) => {
-    deck.push({ ...phase, cardIndex: index });
-    deck.push({ ...phase, cardIndex: index });
-  });
-  return shuffle(deck);
-}
-
-function shufflePhaseDeck() {
-  return shuffle(createPhaseDeck());
-}
-
-function getCurrentPhase(room, player) {
-  if (!room || !player) return null;
-  if (!room.shuffledPhases || !room.phaseDeck) {
-    return PHASES[Math.min(player.phaseIndex, 9)] || null;
-  }
-  const idx = Math.min(player.phaseIndex, room.phaseDeck.length - 1);
-  return room.phaseDeck[idx] || null;
-}
-
 /* ---------- validation ---------- */
 
 function validateSet(group, count) {
@@ -843,6 +760,7 @@ function resolveLayDown(r, playerId, activeGroups) {
   }));
   AudioManager.playPhaseCompleteSound();
   
+  // Check if player has no cards left after laying down
   if (pl.hand.length === 0) {
     AudioManager.playWinSound();
     const results = players.map((p) => {
@@ -1346,7 +1264,6 @@ export default function Phase10App() {
       if (!existing) break;
     }
     const pid = uid("p");
-    const phaseDeck = shufflePhaseDeck();
     const newRoom = {
       code,
       isSolo: false,
@@ -1368,8 +1285,6 @@ export default function Phase10App() {
       roundWinner: null,
       chatMessages: [],
       difficulty: "medium",
-      phaseDeck: phaseDeck,
-      shuffledPhases: true,
     };
     await saveRoom(newRoom);
     setRoom(newRoom);
@@ -1421,7 +1336,6 @@ export default function Phase10App() {
     const players = room.players.map((p) => ({ ...p, hand: [], phaseIndex: 0, laidDownThisRound: false, score: 0 }));
     for (let i = 0; i < 10; i++) for (const p of players) p.hand.push(deck.pop());
     const discard = [deck.pop()];
-    const phaseDeck = shufflePhaseDeck();
     const updated = {
       ...room, 
       status: "playing", 
@@ -1439,8 +1353,6 @@ export default function Phase10App() {
       roundWinner: null,
       chatMessages: room.chatMessages || [],
       difficulty: room.difficulty || "medium",
-      phaseDeck: phaseDeck,
-      shuffledPhases: true,
     };
     await saveRoom(updated);
     setRoom(updated);
@@ -1476,7 +1388,6 @@ export default function Phase10App() {
       }
     }
     const discard = [deck.pop()];
-    const phaseDeck = shufflePhaseDeck();
     const soloRoom = {
       code: "SOLO", 
       isSolo: true, 
@@ -1497,8 +1408,6 @@ export default function Phase10App() {
       roundWinner: null,
       chatMessages: [],
       difficulty: botDifficulty,
-      phaseDeck: phaseDeck,
-      shuffledPhases: true,
     };
     setRoom(soloRoom);
     setMyId("you");
@@ -1523,7 +1432,7 @@ export default function Phase10App() {
 
   const me = room?.players.find((p) => p.id === myId);
   const isMyTurn = room && (room.status === "playing") && room.players[room.currentPlayerIndex]?.id === myId;
-  const phase = getCurrentPhase(room, me);
+  const phase = me ? PHASES[Math.min(me.phaseIndex, 9)] : null;
   const hasDrawn = room?.hasDrawn || false;
 
   // Celebration detection
