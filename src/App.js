@@ -1706,7 +1706,7 @@ useEffect(() => {
           setShowRoundComplete(true);
         }, 3000);
       }
-    }
+    } // ✅ This closing brace was missing
     
     if (lastLog.includes('WINS THE GAME')) {
       const parts = lastLog.split(' ');
@@ -1727,6 +1727,17 @@ useEffect(() => {
         AudioManager.playWinSound();
         AudioManager.stopBackgroundMusic();
         setTimeout(() => setCelebration(null), 6000);
+        
+        // Show game win modal after celebration
+        setTimeout(() => {
+          setRoundWinner(winnerName);
+          setRoundNumber(room.round);
+          setShowRoundComplete(true);
+        }, 4000);
+      }
+    }
+  }
+}, [room, room?.log, room?.isSolo, me?.name]); // ✅ Added 'room' to dependencies
         
         // Show game win modal after celebration
         setTimeout(() => {
