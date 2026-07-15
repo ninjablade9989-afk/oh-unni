@@ -1359,38 +1359,39 @@ export default function Phase10App() {
 
   // Real-time sync for multiplayer
   useEffect(() => {
-    if (!room || room.isSolo || !codeRef.current) {
-      return;
-    }
-    console.log('Setting up real-time sync for room:', codeRef.current);
-    const unsubscribe = subscribeToRoom(
-      codeRef.current,
-      (updatedRoom) => {
-        console.log('Received room update from Supabase');
-        setRoom(updatedRoom);
-        if (updatedRoom.chatMessages) {
-          setChatMessages(updatedRoom.chatMessages);
-        }
+  if (!room || room.isSolo || !codeRef.current) {
+    return;
+  }
+  console.log('Setting up real-time sync for room:', codeRef.current);
+  const unsubscribe = subscribeToRoom(
+    codeRef.current,
+    (updatedRoom) => {
+      console.log('Received room update from Supabase');
+      setRoom(updatedRoom);
+      if (updatedRoom.chatMessages) {
+        setChatMessages(updatedRoom.chatMessages);
       }
-    );
-    return () => {
-      unsubscribe?.();
-    };
-  }, [room?.code, room?.isSolo]);
+    }
+  );
+  return () => {
+    unsubscribe?.();
+  };
+}, [room, room?.code, room?.isSolo]); // Added room
 
   // Play turn start sound when it becomes your turn
-  useEffect(() => {
-    const current = room?.players[room?.currentPlayerIndex];
-    if (current && current.id === myId && room?.status === "playing" && !turnSoundPlayedRef.current) {
-      turnSoundPlayedRef.current = true;
-      if (!isMuted) {
-        AudioManager.playTurnStartSound();
-      }
+ // Fix 2: Line ~1393
+useEffect(() => {
+  const current = room?.players[room?.currentPlayerIndex];
+  if (current && current.id === myId && room?.status === "playing" && !turnSoundPlayedRef.current) {
+    turnSoundPlayedRef.current = true;
+    if (!isMuted) {
+      AudioManager.playTurnStartSound();
     }
-    if (current && current.id !== myId) {
-      turnSoundPlayedRef.current = false;
-    }
-  }, [room?.currentPlayerIndex, room?.status, myId, isMuted]);
+  }
+  if (current && current.id !== myId) {
+    turnSoundPlayedRef.current = false;
+  }
+}, [room?.players, room?.currentPlayerIndex, room?.status, myId, isMuted]); // Added room?.players
 
   // Play background music when game starts
   useEffect(() => {
@@ -1411,13 +1412,13 @@ export default function Phase10App() {
   }, [room?.status, room?.isSolo, isMuted]);
 
   // Deal animation when round starts
-  useEffect(() => {
-    if (room?.status === "playing" && room?.turnState === "draw") {
-      setDealAnimation(true);
-      AudioManager.playDealSound();
-      setTimeout(() => setDealAnimation(false), 1000);
-    }
-  }, [room?.round, room?.status]);
+useEffect(() => {
+  if (room?.status === "playing" && room?.turnState === "draw") {
+    setDealAnimation(true);
+    AudioManager.playDealSound();
+    setTimeout(() => setDealAnimation(false), 1000);
+  }
+}, [room?.round, room?.status, room?.turnState]); // Added room?.turnState
 
   useEffect(() => {
     (async () => {
@@ -1648,55 +1649,95 @@ export default function Phase10App() {
   const phase = me ? PHASES[Math.min(me.phaseIndex, 9)] : null;
   const hasDrawn = room?.hasDrawn || false;
 
-  // Celebration detection - Updated to show round complete modal
-  useEffect(() => {
-    if (!room || !room.log) return;
-    const logs = room.log;
-    const lastLog = logs[logs.length - 1];
+// Celebration detection - Updated to show round complete modal
+useEffect(() => {
+  if (!room || !room.log) return;
+  const logs = room.log;
+  const lastLog = logs[logs.length - 1];
+  
+  if (lastLog && lastLogRef.current !== lastLog) {
+    lastLogRef.current = lastLog;
+    console.log('📝 New log detected:', lastLog);
     
-    if (lastLog && lastLogRef.current !== lastLog) {
-      lastLogRef.current = lastLog;
-      console.log('📝 New log detected:', lastLog);
+    if (lastLog.includes('laid down Phase')) {
+      const playerName = lastLog.split(' laid down')[0];
+      const isCurrentPlayer = room.isSolo || (me && playerName === me.name);
+      if (isCurrentPlayer) {
+        setCelebration({
+          message: `🌟 ${playerName} completed Phase! 🌟`,
+          type: 'phase'
+        });
+        AudioManager.playPhaseCompleteSound();
+        setTimeout(() => setCelebration(null), 4000);
+      }
+    }
+    
+    if (lastLog.includes('WON ROUND')) {
+      console.log('🎯 Round winner detected!');
+      const parts = lastLog.split(' ');
+      let winnerName = null;
+      let roundNum = null;
       
-      if (lastLog.includes('laid down Phase')) {
-        const playerName = lastLog.split(' laid down')[0];
-        const isCurrentPlayer = room.isSolo || (me && playerName === me.name);
-        if (isCurrentPlayer) {
-          setCelebration({
-            message: `🌟 ${playerName} completed Phase! 🌟`,
-            type: 'phase'
-          });
-          AudioManager.playPhaseCompleteSound();
-          setTimeout(() => setCelebration(null), 4000);
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i].toUpperCase() === 'WON' && parts[i+1] && parts[i+1].toUpperCase() === 'ROUND') {
+          if (i > 0) {
+            winnerName = parts[i-1];
+          }
+          if (i+2 < parts.length) {
+            roundNum = parts[i+2].replace(/[!.]/g, '');
+          }
+          break;
         }
       }
       
-      if (lastLog.includes('WON ROUND')) {
-        console.log('🎯 Round winner detected!');
-        const parts = lastLog.split(' ');
-        let winnerName = null;
-        let roundNum = null;
+      if (winnerName) {
+        console.log('🏆 Winner found:', winnerName);
+        setCelebration({
+          message: `🎉 ${winnerName} WON ROUND ${roundNum || '?'}! 🎉`,
+          type: 'round'
+        });
+        AudioManager.playPhaseCompleteSound();
+        setTimeout(() => setCelebration(null), 5000);
         
-        for (let i = 0; i < parts.length; i++) {
-          if (parts[i].toUpperCase() === 'WON' && parts[i+1] && parts[i+1].toUpperCase() === 'ROUND') {
-            if (i > 0) {
-              winnerName = parts[i-1];
-            }
-            if (i+2 < parts.length) {
-              roundNum = parts[i+2].replace(/[!.]/g, '');
-            }
-            break;
+        // Show round complete modal after celebration
+        setTimeout(() => {
+          setRoundWinner(winnerName);
+          setRoundNumber(parseInt(roundNum) || room.round);
+          setShowRoundComplete(true);
+        }, 3000);
+      }
+    }
+    
+    if (lastLog.includes('WINS THE GAME')) {
+      const parts = lastLog.split(' ');
+      let winnerName = null;
+      for (let i = 0; i < parts.length; i++) {
+        if (parts[i].toUpperCase() === 'WINS' && parts[i+1] && parts[i+1].toUpperCase() === 'THE' && parts[i+2] && parts[i+2].toUpperCase() === 'GAME') {
+          if (i > 0) {
+            winnerName = parts[i-1];
           }
+          break;
         }
+      }
+      if (winnerName) {
+        setCelebration({
+          message: `🏆 ${winnerName} WINS THE GAME! 🏆`,
+          type: 'win'
+        });
+        AudioManager.playWinSound();
+        AudioManager.stopBackgroundMusic();
+        setTimeout(() => setCelebration(null), 6000);
         
-        if (winnerName) {
-          console.log('🏆 Winner found:', winnerName);
-          setCelebration({
-            message: `🎉 ${winnerName} WON ROUND ${roundNum || '?'}! 🎉`,
-            type: 'round'
-          });
-          AudioManager.playPhaseCompleteSound();
-          setTimeout(() => setCelebration(null), 5000);
+        // Show game win modal after celebration
+        setTimeout(() => {
+          setRoundWinner(winnerName);
+          setRoundNumber(room.round);
+          setShowRoundComplete(true);
+        }, 4000);
+      }
+    }
+  }
+}, [room, room?.log, room?.isSolo, me?.name]); // ✅ Fixed: Added 'room' to dependencies
           
           // Show round complete modal after celebration
           setTimeout(() => {
@@ -1892,10 +1933,10 @@ export default function Phase10App() {
   /* ---- 40s turn timer ---- */
 
   useEffect(() => {
-    if (!room || room.status !== "playing") return;
-    const iv = setInterval(() => setNowTick(Date.now()), 1000);
-    return () => clearInterval(iv);
-  }, [room?.status]);
+  if (!room || room.status !== "playing") return;
+  const iv = setInterval(() => setNowTick(Date.now()), 1000);
+  return () => clearInterval(iv);
+}, [room, room?.status]); // Added room
 
   useEffect(() => {
     autoActedRef.current = false;
